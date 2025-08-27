@@ -1,0 +1,7 @@
+ttkbootstrap
+numpy
+scipy
+numba
+lxml
+matplotlib
+pandas
