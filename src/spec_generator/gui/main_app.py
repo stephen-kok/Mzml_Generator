@@ -906,6 +906,7 @@ class CombinedSpectrumSequenceApp:
         self.antibody_generate_button = ttk.Button(action_frame, text="Generate mzML File", command=self.generate_antibody_spectra_command, bootstyle=PRIMARY)
         self.antibody_generate_button.pack(side=LEFT, padx=5)
 
+
         # --- Progress & Log ---
         progress_frame = ttk.LabelFrame(main, text="4. Progress & Log", padding=(15, 10))
         progress_frame.grid(row=3, column=0, sticky=EW, padx=10, pady=10)
@@ -998,6 +999,7 @@ class CombinedSpectrumSequenceApp:
 
         entry.bind("<Return>", save_edit)
         entry.bind("<FocusOut>", save_edit)
+
 
     def _preview_antibody_spectrum_command(self):
         """
