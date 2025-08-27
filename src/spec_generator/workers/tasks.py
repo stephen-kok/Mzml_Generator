@@ -51,9 +51,12 @@ def run_simulation_task(args: tuple) -> tuple[bool, str]:
             num_scans=common_params['num_scans'],
             scan_interval=common_params['scan_interval'],
             gaussian_std_dev=common_params['gaussian_std_dev'],
+            lc_tailing_factor=common_params.get('lc_tailing_factor', 0.0),
             final_filepath=filepath,
             isotopic_enabled=common_params['isotopic_enabled'],
             resolution=common_params['resolution'],
+            mass_inhomogeneity=common_params.get('mass_inhomogeneity', 0.0),
+            pink_noise_enabled=common_params.get('pink_noise_enabled', False),
             update_queue=None  # No queue for multiprocessing workers, just return status
         )
 

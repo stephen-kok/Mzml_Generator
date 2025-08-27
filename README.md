@@ -10,6 +10,11 @@ This application generates simulated mass spectrometry data (`.mzML` files) for 
 - **Batch Processing:** File generation is handled using `multiprocessing` to leverage multiple CPU cores and speed up the creation of large datasets.
 - **GUI:** An easy-to-use interface built with Tkinter and ttkbootstrap.
 
+### Advanced Simulation Features
+- **Mass Inhomogeneity:** Simulate protein conformational broadening by defining a standard deviation for the average protein mass.
+- **EMG Peak Shape:** Model more realistic chromatographic profiles by applying an Exponentially Modified Gaussian (EMG) shape with a configurable tailing factor.
+- **1/f Noise:** Optionally add an extra layer of `1/f` (pink) noise for more realistic electronic noise simulation.
+
 ## Installation
 
 To run this application, you need Python 3.10 or newer.

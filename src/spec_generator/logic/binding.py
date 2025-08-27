@@ -2,7 +2,7 @@ import os
 import numpy as np
 
 from ..core.spectrum import generate_binding_spectrum
-from ..core.lc import generate_gaussian_scaled_spectra
+from ..core.lc import apply_lc_profile_and_noise
 from ..utils.mzml import create_mzml_content_et
 from ..utils.file_io import create_unique_filename
 from ..core.constants import BASE_INTENSITY_SCALAR
@@ -43,13 +43,15 @@ def execute_binding_simulation(
 
         # 2. Apply LC profile and noise
         scans_to_gen = common_params['num_scans']
-        final_spectra = generate_gaussian_scaled_spectra(
+        final_spectra = apply_lc_profile_and_noise(
             mz_range=mz_range,
             all_clean_spectra=[clean_spec], # The binding spectrum is treated as a single "protein"
             num_scans=scans_to_gen,
             gaussian_std_dev=common_params['gaussian_std_dev'],
+            lc_tailing_factor=common_params.get('lc_tailing_factor', 0.0),
             seed=common_params['seed'],
             noise_option=common_params['noise_option'],
+            pink_noise_enabled=common_params.get('pink_noise_enabled', False),
             update_queue=None # No queue for worker processes
         )
 

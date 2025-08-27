@@ -1,6 +1,8 @@
 import queue
+import math
 import numpy as np
 from numpy.random import default_rng
+from scipy.special import erfc
 
 from .constants import noise_presets
 from .noise import add_noise
@@ -44,18 +46,42 @@ def generate_scaled_spectra(
         return None, None
 
 
-def generate_gaussian_scaled_spectra(
+def _get_lc_peak_shape(num_scans: int, std_dev: float, tau: float) -> np.ndarray:
+    """
+    Generates an LC peak profile, either Gaussian or Exponentially Modified Gaussian (EMG).
+    """
+    apex_scan_index = (num_scans - 1) / 2.0
+    scan_index_values = np.arange(num_scans)
+
+    if tau <= 1e-6: # Treat as pure Gaussian for negligible tau
+        return np.exp(-((scan_index_values - apex_scan_index)**2) / (2 * max(1e-6, std_dev)**2))
+    else: # Exponentially Modified Gaussian
+        # Clamp values to avoid math errors with very small inputs
+        tau = max(1e-6, tau)
+        std_dev = max(1e-6, std_dev)
+
+        arg = (std_dev**2 - tau * (scan_index_values - apex_scan_index)) / (math.sqrt(2) * std_dev * tau)
+        emg = (std_dev / tau) * math.sqrt(math.pi / 2) * np.exp(0.5 * (std_dev / tau)**2 - (scan_index_values - apex_scan_index) / tau) * erfc(arg)
+
+        # Normalize the peak to a maximum of 1.0
+        max_val = np.max(emg)
+        return emg / max_val if max_val > 0 else emg
+
+
+def apply_lc_profile_and_noise(
     mz_range: np.ndarray,
     all_clean_spectra: list[np.ndarray],
     num_scans: int,
     gaussian_std_dev: float,
+    lc_tailing_factor: float,
     seed: int,
     noise_option: str,
+    pink_noise_enabled: bool,
     update_queue: queue.Queue | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Applies a Gaussian LC peak shape to a list of base spectra over a
-    specified number of scans and adds noise to each scan.
+    Applies an LC peak shape (Gaussian or EMG) to a list of base spectra
+    over a specified number of scans and adds noise to each scan.
     """
     if num_scans <= 0:
         if update_queue:
@@ -64,10 +90,8 @@ def generate_gaussian_scaled_spectra(
 
     min_noise_level = 0.01
     baseline_offset = 10.0
-    apex_scan_index = (num_scans - 1) / 2.0
-    scan_index_values = np.arange(num_scans)
-    # Clamp std dev to avoid division by zero
-    lc_scaling_factors = np.exp(-((scan_index_values - apex_scan_index)**2) / (2 * max(1e-6, gaussian_std_dev)**2))
+
+    lc_scaling_factors = _get_lc_peak_shape(num_scans, gaussian_std_dev, lc_tailing_factor)
 
     gaussian_scaled_spectra_all_proteins = []
     rng = default_rng(seed)
@@ -96,6 +120,7 @@ def generate_gaussian_scaled_spectra(
                         intensities=scaled_intensity_array,
                         min_noise_level=min_noise_level,
                         max_intensity=max_intensity_for_noise,
+                        pink_noise_enabled=pink_noise_enabled,
                         seed=seed + protein_idx * num_scans + scan_idx,
                         **noise_params
                     )
