@@ -1,9 +1,52 @@
 import math
 import numpy as np
+import numba
 
 from .constants import (BASE_INTENSITY_SCALAR, FWHM_TO_SIGMA, MZ_SCALE_FACTOR,
                         PROTON_MASS)
 from .isotopes import isotope_calculator
+
+
+@numba.jit(nopython=True, fastmath=True)
+def _build_spectrum_from_peaks_numba(
+    mz_range: np.ndarray,
+    peak_mzs: np.ndarray,
+    peak_intensities: np.ndarray,
+    peak_sigmas: np.ndarray
+) -> np.ndarray:
+    """
+    Generates a spectrum by summing Gaussian peaks. This function is JIT-compiled
+    by Numba for significant performance improvement.
+    """
+    final_spectrum = np.zeros_like(mz_range, dtype=np.float64)
+
+    # Numba works best with explicit loops.
+    # The chunking approach from the original numpy version is less necessary here,
+    # but we can still process peak-by-peak, which is very Numba-friendly.
+    for i in range(len(peak_mzs)):
+        mz = peak_mzs[i]
+        intensity = peak_intensities[i]
+        sigma = peak_sigmas[i]
+
+        # Determine the relevant m/z range to calculate for this peak
+        # (e.g., +/- 5 sigma) to avoid calculating the full Gaussian.
+        m_dist = 5 * sigma
+        start_idx = np.searchsorted(mz_range, mz - m_dist, side='left')
+        end_idx = np.searchsorted(mz_range, mz + m_dist, side='right')
+
+        if start_idx >= end_idx:
+            continue
+
+        # Slicing inside a Numba loop
+        relevant_mz = mz_range[start_idx:end_idx]
+
+        two_sigma_sq = 2 * sigma**2
+        gaussian = intensity * np.exp(-((relevant_mz - mz)**2) / two_sigma_sq)
+
+        # Add the calculated Gaussian to the corresponding slice of the final spectrum
+        final_spectrum[start_idx:end_idx] += gaussian
+
+    return final_spectrum
 
 
 def generate_protein_spectrum(
@@ -36,7 +79,7 @@ def generate_protein_spectrum(
     if min_charge > max_charge:
         return np.zeros_like(mz_range, dtype=float)
 
-    # Create charge state envelope (Gaussian distribution of intensities over charge states)
+    # Create charge state envelope
     charge_states = np.arange(min_charge, max_charge + 1)
     num_valid_charge_states = len(charge_states)
     peak_charge_index_relative = num_valid_charge_states // 2
@@ -48,7 +91,7 @@ def generate_protein_spectrum(
         intensity_scalar
     )
 
-    # Generate peaks for all isotopes across all charge states
+    # Collect peak properties from all isotopes and charge states
     all_peak_mzs, all_peak_intensities, all_peak_sigmas = [], [], []
     isotope_offsets, isotope_rel_intensities = np.array([p[0] for p in isotopic_distribution]), np.array([p[1] for p in isotopic_distribution])
 
@@ -66,7 +109,6 @@ def generate_protein_spectrum(
         all_peak_mzs.extend(visible_mzs)
         all_peak_intensities.extend(base_intensity * isotope_rel_intensities[visible_mask])
 
-        # Calculate peak width (sigma) as combination of intrinsic and resolution-dependent width
         sigma_intrinsic = peak_sigma_mz_float * (visible_mzs / MZ_SCALE_FACTOR)
         if isotopic_enabled and resolution > 0:
             sigma_resolution = (visible_mzs / resolution) / FWHM_TO_SIGMA
@@ -78,27 +120,15 @@ def generate_protein_spectrum(
     if not all_peak_mzs:
         return np.zeros_like(mz_range)
 
-    # Vectorized generation of the final spectrum from all collected peaks
-    all_peak_mzs = np.array(all_peak_mzs)
-    all_peak_intensities = np.array(all_peak_intensities)
-    all_peak_sigmas = np.array(all_peak_sigmas)
+    # Convert lists to numpy arrays for Numba
+    all_peak_mzs = np.array(all_peak_mzs, dtype=np.float64)
+    all_peak_intensities = np.array(all_peak_intensities, dtype=np.float64)
+    all_peak_sigmas = np.array(all_peak_sigmas, dtype=np.float64)
 
-    final_spectrum = np.zeros_like(mz_range, dtype=float)
-
-    # Process in chunks to manage memory usage for large numbers of peaks
-    chunk_size = 100
-    for i in range(0, len(all_peak_mzs), chunk_size):
-        chunk_mzs = all_peak_mzs[i:i+chunk_size]
-        chunk_intensities = all_peak_intensities[i:i+chunk_size]
-        chunk_sigmas = all_peak_sigmas[i:i+chunk_size]
-
-        # Broadcasting for efficient Gaussian calculation
-        mz_grid = mz_range[:, np.newaxis]
-        two_sigma_sq = 2 * chunk_sigmas**2
-        gaussians = chunk_intensities * np.exp(-((mz_grid - chunk_mzs)**2) / two_sigma_sq)
-        final_spectrum += np.sum(gaussians, axis=1)
-
-    return final_spectrum
+    # Call the optimized Numba function to build the final spectrum
+    return _build_spectrum_from_peaks_numba(
+        mz_range, all_peak_mzs, all_peak_intensities, all_peak_sigmas
+    )
 
 
 def generate_binding_spectrum(
