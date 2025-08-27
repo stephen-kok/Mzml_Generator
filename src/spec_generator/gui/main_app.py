@@ -27,6 +27,9 @@ from ..utils.file_io import (format_filename, read_compound_list_file,
 from ..utils.ui_helpers import (ScrollableFrame, Tooltip, parse_float_entry,
                                   parse_range_entry)
 from ..workers.tasks import run_binding_task, run_simulation_task
+from ..logic.antibody import (generate_assembly_combinations,
+                                calculate_assembly_masses,
+                                execute_antibody_simulation)
 
 
 class CombinedSpectrumSequenceApp:
@@ -56,6 +59,10 @@ class CombinedSpectrumSequenceApp:
         binding_tab = ttk.Frame(self.notebook)
         self.notebook.add(binding_tab, text="Covalent Binding")
         self.create_binding_spectra_tab_content(binding_tab)
+
+        antibody_tab = ttk.Frame(self.notebook)
+        self.notebook.add(antibody_tab, text="Antibody Simulation")
+        self.create_antibody_tab_content(antibody_tab)
 
         master.minsize(650, 600)
 
@@ -133,6 +140,8 @@ class CombinedSpectrumSequenceApp:
                     out_text, prog_bar = self.spectrum_output_text, self.progress_bar
                 elif active_tab == 2: # Covalent Binding
                     out_text, prog_bar = self.binding_output_text, self.binding_progress_bar
+                elif active_tab == 3: # Antibody Simulation
+                    out_text, prog_bar = self.antibody_output_text, self.antibody_progress_bar
                 else: # Docs tab has no progress bar or output text
                     continue
 
@@ -153,8 +162,11 @@ class CombinedSpectrumSequenceApp:
                 elif msg_type == 'done':
                     if active_tab == 1:
                         self.spectrum_generate_button.config(state=NORMAL)
-                    else:
+                    elif active_tab == 2:
                         self.binding_generate_button.config(state=NORMAL)
+                    elif active_tab == 3:
+                        self.antibody_generate_button.config(state=NORMAL)
+
                     if msg_data:
                         messagebox.showinfo("Complete", msg_data)
         except queue.Empty:
@@ -780,6 +792,249 @@ class CombinedSpectrumSequenceApp:
             messagebox.showerror("Preview Error", f"Invalid parameters for preview: {e}")
         except Exception as e:
             messagebox.showerror("Preview Error", f"An unexpected error occurred during preview: {e}")
+
+    def create_antibody_tab_content(self, tab):
+        frame = ScrollableFrame(tab)
+        frame.pack(fill="both", expand=True)
+        main = frame.scrollable_frame
+        self.chain_entries = []
+        self.assembly_abundances = {}
+
+        # --- Chain Input Frame ---
+        chain_frame = ttk.LabelFrame(main, text="1. Chain Definition", padding=(15, 10))
+        chain_frame.grid(row=0, column=0, sticky=EW, padx=10, pady=10)
+        chain_frame.columnconfigure(1, weight=1)
+
+        # This inner frame will hold the dynamically added chain entries
+        self.chain_inner_frame = ttk.Frame(chain_frame)
+        self.chain_inner_frame.grid(row=0, column=0, columnspan=4, sticky=EW)
+
+        def add_chain_row(chain_type, sequence=""):
+            # ... (rest of add_chain_row implementation remains the same)
+            entry_data = {}
+
+            def remove_chain_row():
+                entry_to_remove = next((item for item in self.chain_entries if item['id'] == entry_data['id']), None)
+                if not entry_to_remove: return
+                for widget in entry_to_remove['widgets']: widget.destroy()
+                self.chain_entries.remove(entry_to_remove)
+                # Re-grid remaining entries
+                for i, entry in enumerate(self.chain_entries):
+                    for col, widget in enumerate(entry['widgets']):
+                        widget.grid(row=i, column=col, sticky=W if col !=1 else EW, pady=2, padx=5)
+
+            row = len(self.chain_entries)
+
+            chain_label = ttk.Label(self.chain_inner_frame, text=f"{chain_type} Sequence:")
+            chain_label.grid(row=row, column=0, sticky=W, pady=2, padx=5)
+
+            seq_var = StringVar(value=sequence)
+            chain_seq_entry = ttk.Entry(self.chain_inner_frame, textvariable=seq_var, width=40)
+            chain_seq_entry.grid(row=row, column=1, sticky=EW, pady=2, padx=5)
+
+            name_var = StringVar(value=f"{chain_type}{row+1}")
+            chain_name_entry = ttk.Entry(self.chain_inner_frame, textvariable=name_var, width=10)
+            chain_name_entry.grid(row=row, column=2, sticky=W, pady=2, padx=5)
+
+            remove_button = ttk.Button(self.chain_inner_frame, text="X", command=remove_chain_row, width=2, bootstyle="danger-outline")
+            remove_button.grid(row=row, column=3, sticky=W, pady=2, padx=5)
+
+            entry_data = {
+                'id': id(seq_var), 'type': chain_type, 'seq_var': seq_var, 'name_var': name_var,
+                'widgets': [chain_label, chain_seq_entry, chain_name_entry, remove_button]
+            }
+            self.chain_entries.append(entry_data)
+            self.chain_inner_frame.columnconfigure(1, weight=1)
+
+        button_frame = ttk.Frame(chain_frame)
+        button_frame.grid(row=1, column=0, columnspan=4, pady=(5,0))
+        add_hc_button = ttk.Button(button_frame, text="Add Heavy Chain", command=lambda: add_chain_row("HC"), style='Outline.TButton')
+        add_hc_button.pack(side=LEFT, padx=5)
+        add_lc_button = ttk.Button(button_frame, text="Add Light Chain", command=lambda: add_chain_row("LC"), style='Outline.TButton')
+        add_lc_button.pack(side=LEFT, padx=5)
+
+        # Add defaults
+        add_chain_row("HC", "PEPTIDE")
+        add_chain_row("LC", "SEQUENCE")
+
+        # --- Assemblies Frame ---
+        assemblies_frame = ttk.LabelFrame(main, text="2. Generated Assemblies & Abundance", padding=(15, 10))
+        assemblies_frame.grid(row=1, column=0, sticky=NSEW, padx=10, pady=10)
+        assemblies_frame.columnconfigure(0, weight=1)
+        assemblies_frame.rowconfigure(0, weight=1)
+        main.rowconfigure(1, weight=1)
+
+        cols = ("Assembly", "Mass (Da)", "Bonds", "Abundance")
+        self.assemblies_tree = ttk.Treeview(assemblies_frame, columns=cols, show='headings', height=8)
+        for col in cols:
+            self.assemblies_tree.heading(col, text=col)
+        self.assemblies_tree.column("Assembly", width=150)
+        self.assemblies_tree.column("Mass (Da)", width=100, anchor=E)
+        self.assemblies_tree.column("Bonds", width=50, anchor=E)
+        self.assemblies_tree.column("Abundance", width=100, anchor=E)
+        self.assemblies_tree.grid(row=0, column=0, sticky=NSEW)
+
+        tree_scroll = ttk.Scrollbar(assemblies_frame, orient="vertical", command=self.assemblies_tree.yview)
+        self.assemblies_tree.configure(yscrollcommand=tree_scroll.set)
+        tree_scroll.grid(row=0, column=1, sticky="ns")
+
+        preview_button = ttk.Button(assemblies_frame, text="Generate / Refresh Assemblies", command=self._preview_assemblies_command, style='Outline.TButton')
+        preview_button.grid(row=1, column=0, columnspan=2, pady=(10,0))
+        Tooltip(preview_button, "Generate the list of possible antibody assemblies and their masses based on the chains defined above.")
+
+        # --- Parameters & Generation ---
+        gen_frame = ttk.LabelFrame(main, text="3. Simulation Parameters & Output", padding=(15, 10))
+        gen_frame.grid(row=2, column=0, sticky=EW, padx=10, pady=10)
+
+        common_frame = ttk.Frame(gen_frame)
+        common_frame.pack(fill=X, expand=True)
+        self.antibody_params = self._create_common_parameters_frame(common_frame, "400.0", "4000.0", "Default Noise")
+        self.antibody_params['output_directory_var'].set(os.path.join(os.getcwd(), "Antibody Mock Spectra"))
+        self.antibody_params['filename_template_var'].set("{date}_{time}_antibody_sim_{scans}scans_{noise}.mzML")
+
+        lc_container, self.antibody_lc_params = self._create_lc_simulation_frame(gen_frame, True)
+        lc_container.pack(fill=X, expand=True, pady=10)
+
+        self.antibody_generate_button = ttk.Button(gen_frame, text="Generate mzML File", command=self.generate_antibody_spectra_command, bootstyle=PRIMARY)
+        self.antibody_generate_button.pack(pady=(10,0))
+
+        # --- Progress & Log ---
+        progress_frame = ttk.LabelFrame(main, text="4. Progress & Log", padding=(15, 10))
+        progress_frame.grid(row=3, column=0, sticky=EW, padx=10, pady=10)
+        progress_frame.columnconfigure(0, weight=1)
+
+        self.antibody_progress_bar = ttk.Progressbar(progress_frame, orient=HORIZONTAL, mode="determinate")
+        self.antibody_progress_bar.grid(row=0, column=0, pady=5, sticky=EW)
+
+        self.antibody_output_text = Text(progress_frame, height=8, wrap=WORD, relief=SUNKEN, borderwidth=1)
+        self.antibody_output_text.grid(row=1, column=0, sticky=NSEW)
+        log_scroll = ttk.Scrollbar(progress_frame, command=self.antibody_output_text.yview)
+        log_scroll.grid(row=1, column=1, sticky="ns")
+        self.antibody_output_text['yscrollcommand'] = log_scroll.set
+
+    def _preview_assemblies_command(self):
+        self.antibody_output_text.delete('1.0', END)
+        self.queue.put(('log', "Generating assembly preview...\n"))
+
+        try:
+            # 1. Clear previous results
+            for item in self.assemblies_tree.get_children():
+                self.assemblies_tree.delete(item)
+            self.assembly_abundances.clear()
+
+            # 2. Get chain definitions from GUI
+            chains = []
+            for entry in self.chain_entries:
+                seq = entry['seq_var'].get().strip().upper()
+                name = entry['name_var'].get().strip()
+                if not seq or not name:
+                    raise ValueError("All chain sequences and names must be provided.")
+                chains.append({'type': entry['type'], 'name': name, 'seq': seq})
+
+            if not chains:
+                raise ValueError("No chains defined.")
+
+            # 3. Generate assemblies and calculate masses
+            assemblies = generate_assembly_combinations(chains)
+            assemblies_with_mass = calculate_assembly_masses(chains, assemblies)
+
+            # 4. Populate the Treeview
+            for assembly in assemblies_with_mass:
+                name = assembly['name']
+                mass_str = f"{assembly['mass']:.2f}"
+                bonds_str = str(assembly['bonds'])
+
+                abundance_var = StringVar(value="1.0")
+                self.assembly_abundances[name] = abundance_var
+
+                item_id = self.assemblies_tree.insert("", "end", values=(name, mass_str, bonds_str, ''))
+
+                entry = ttk.Entry(self.assemblies_tree, textvariable=abundance_var, width=8, justify='right')
+                self.assemblies_tree.window_create(item_id, column="Abundance", window=entry)
+
+            self.queue.put(('log', f"Successfully generated {len(assemblies_with_mass)} species. You can now edit their relative abundances.\n"))
+
+        except (ValueError, Exception) as e:
+            self.queue.put(('error', str(e)))
+
+    def generate_antibody_spectra_command(self):
+        self.antibody_generate_button.config(state=DISABLED)
+        self.antibody_progress_bar["value"] = 0
+        self.queue.put(('clear_log', None))
+        threading.Thread(target=self._worker_generate_antibody_spectra, daemon=True).start()
+
+    def _worker_generate_antibody_spectra(self):
+        try:
+            # 1. Gather all parameters from the GUI
+            common_params = self._get_common_gen_params(self.antibody_params, self.antibody_lc_params)
+            lc_params = {
+                'lc_simulation_enabled': self.antibody_lc_params['enabled_var'].get(),
+                'num_scans': int(self.antibody_lc_params['num_scans_entry'].get()),
+                'scan_interval': float(self.antibody_lc_params['scan_interval_entry'].get()),
+                'gaussian_std_dev': float(self.antibody_lc_params['gaussian_std_dev_entry'].get()),
+                'lc_tailing_factor': float(self.antibody_lc_params['lc_tailing_factor_entry'].get())
+            }
+
+            # 2. Gather chain definitions
+            chains = []
+            for entry in self.chain_entries:
+                seq = entry['seq_var'].get().strip()
+                name = entry['name_var'].get().strip()
+                if not seq or not name:
+                    raise ValueError("All chain sequences and names must be filled in.")
+                chains.append({'type': entry['type'], 'name': name, 'seq': seq})
+
+            if not chains:
+                raise ValueError("No chains defined to simulate.")
+
+            # 3. Format filename
+            placeholders = {
+                "date": datetime.now().strftime('%Y-%m-%d'), "time": datetime.now().strftime('%H%M%S'),
+                "scans": lc_params['num_scans'], "noise": common_params['noise_option'].replace(" ", ""),
+                "seed": common_params['seed'],
+            }
+            filename = format_filename(common_params['filename_template'], placeholders)
+            filepath = os.path.join(common_params['output_directory'], filename)
+
+            # 4. Gather abundance values from the Treeview
+            if not self.assembly_abundances:
+                raise ValueError("Please generate the assemblies first using the 'Preview' button.")
+
+            # The order of items in the tree is the order we need for the scalars
+            ordered_assembly_names = [self.assemblies_tree.item(item_id)['values'][0] for item_id in self.assemblies_tree.get_children()]
+            intensity_scalars = [parse_float_entry(self.assembly_abundances[name].get(), f"Abundance for {name}") for name in ordered_assembly_names]
+
+            # 5. Call the orchestration function
+            success = execute_antibody_simulation(
+                chains=chains,
+                final_filepath=filepath,
+                update_queue=self.queue,
+                intensity_scalars=intensity_scalars,
+                mz_step_str=common_params['mz_step'],
+                peak_sigma_mz_str=common_params['peak_sigma_mz'],
+                mz_range_start_str=common_params['mz_range_start'],
+                mz_range_end_str=common_params['mz_range_end'],
+                noise_option=common_params['noise_option'],
+                seed=common_params['seed'],
+                lc_simulation_enabled=lc_params['lc_simulation_enabled'],
+                num_scans=lc_params['num_scans'],
+                scan_interval=lc_params['scan_interval'],
+                gaussian_std_dev=lc_params['gaussian_std_dev'],
+                lc_tailing_factor=lc_params['lc_tailing_factor'],
+                isotopic_enabled=common_params['isotopic_enabled'],
+                resolution=common_params['resolution'],
+                mass_inhomogeneity=0.0, # Not applicable for this mode yet
+                pink_noise_enabled=common_params['pink_noise_enabled'],
+            )
+
+            if success:
+                self.queue.put(('done', "Antibody mzML file successfully created."))
+            else:
+                self.queue.put(('done', None)) # Will allow button to be re-enabled
+
+        except (ValueError, Exception) as e:
+            self.queue.put(('error', f"Simulation failed: {e}"))
+            self.queue.put(('done', None))
 
     def _preview_binding_tab_command(self):
         """

@@ -21,3 +21,7 @@ noise_presets = {
         "pink_noise_level": 0.5,
     },
 }
+
+# Mass of two hydrogen atoms, lost during the formation of one disulfide bond.
+# H_mass = 1.007825 Da -> 2 * H = 2.01565 Da
+DISULFIDE_MASS_LOSS = 2.01565
