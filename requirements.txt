@@ -5,3 +5,5 @@ numba
 lxml
 matplotlib
 pandas
+pyteomics
+pytest
