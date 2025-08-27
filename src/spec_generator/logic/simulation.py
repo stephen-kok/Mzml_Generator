@@ -28,7 +28,8 @@ def execute_simulation_and_write_mzml(
     mass_inhomogeneity: float,
     pink_noise_enabled: bool,
     update_queue: queue.Queue | None,
-) -> bool:
+    return_data_only: bool = False,
+) -> bool | tuple[np.ndarray, list[np.ndarray]]:
     """
     The main logic for running a simulation and writing the mzML file.
     Orchestrates the spectrum generation, scaling, noise addition, and file writing.
@@ -138,6 +139,16 @@ def execute_simulation_and_write_mzml(
 
         if update_queue:
             update_queue.put(('progress_set', 95))
+
+        # --- File Writing ---
+        unique_filepath = create_unique_filename(final_filepath)
+        os.makedirs(os.path.dirname(unique_filepath), exist_ok=True)
+
+        if update_queue:
+            update_queue.put(('log', f"Writing mzML file to: {os.path.basename(unique_filepath)}\n"))
+
+        if return_data_only:
+            return mz_range, spectra_for_mzml
 
         # --- File Writing ---
         unique_filepath = create_unique_filename(final_filepath)

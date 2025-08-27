@@ -73,7 +73,10 @@ def execute_antibody_simulation(
     isotopic_enabled: bool,
     resolution: float,
     mass_inhomogeneity: float,
-    pink_noise_enabled: bool
+
+    pink_noise_enabled: bool,
+    return_data_only: bool = False
+
 ):
     """
     Orchestrates the full antibody simulation process by generating assemblies,
@@ -102,7 +105,9 @@ def execute_antibody_simulation(
                 update_queue.put(('log', f"  ... and {num_assemblies - 15} more species.\n"))
 
         # Step 3: Call the core simulation engine
-        success = execute_simulation_and_write_mzml(
+
+        result = execute_simulation_and_write_mzml(
+
             protein_masses_str=protein_masses_str,
             intensity_scalars=intensity_scalars,
             final_filepath=final_filepath,
@@ -122,9 +127,11 @@ def execute_antibody_simulation(
             resolution=resolution,
             mass_inhomogeneity=mass_inhomogeneity,
             pink_noise_enabled=pink_noise_enabled,
+            return_data_only=return_data_only
         )
 
-        return success
+        return result
+
 
     except (ValueError, Exception) as e:
         if update_queue:

@@ -896,8 +896,16 @@ class CombinedSpectrumSequenceApp:
         lc_container, self.antibody_lc_params = self._create_lc_simulation_frame(gen_frame, True)
         lc_container.pack(fill=X, expand=True, pady=10)
 
-        self.antibody_generate_button = ttk.Button(gen_frame, text="Generate mzML File", command=self.generate_antibody_spectra_command, bootstyle=PRIMARY)
-        self.antibody_generate_button.pack(pady=(10,0))
+        action_frame = ttk.Frame(gen_frame)
+        action_frame.pack(pady=(10,0))
+
+        self.antibody_preview_spec_button = ttk.Button(action_frame, text="Preview Spectrum", command=self._preview_antibody_spectrum_command, style='Outline.TButton')
+        self.antibody_preview_spec_button.pack(side=LEFT, padx=5)
+        Tooltip(self.antibody_preview_spec_button, "Generate and display a plot of the apex scan of the simulated spectrum.")
+
+        self.antibody_generate_button = ttk.Button(action_frame, text="Generate mzML File", command=self.generate_antibody_spectra_command, bootstyle=PRIMARY)
+        self.antibody_generate_button.pack(side=LEFT, padx=5)
+
 
         # --- Progress & Log ---
         progress_frame = ttk.LabelFrame(main, text="4. Progress & Log", padding=(15, 10))
@@ -991,6 +999,70 @@ class CombinedSpectrumSequenceApp:
 
         entry.bind("<Return>", save_edit)
         entry.bind("<FocusOut>", save_edit)
+
+
+    def _preview_antibody_spectrum_command(self):
+        """
+        Generates and displays a single antibody spectrum preview without saving.
+        """
+        try:
+            # This logic is very similar to the start of the worker thread
+            common_params = self._get_common_gen_params(self.antibody_params, self.antibody_lc_params)
+            lc_params = {
+                'lc_simulation_enabled': self.antibody_lc_params['enabled_var'].get(),
+                'num_scans': int(self.antibody_lc_params['num_scans_entry'].get()),
+                'scan_interval': float(self.antibody_lc_params['scan_interval_entry'].get()),
+                'gaussian_std_dev': float(self.antibody_lc_params['gaussian_std_dev_entry'].get()),
+                'lc_tailing_factor': float(self.antibody_lc_params['lc_tailing_factor_entry'].get())
+            }
+            chains = []
+            for entry in self.chain_entries:
+                seq = entry['seq_var'].get().strip().upper()
+                name = entry['name_var'].get().strip()
+                if not seq or not name: raise ValueError("All chain sequences and names must be provided.")
+                chains.append({'type': entry['type'], 'name': name, 'seq': seq})
+            if not chains: raise ValueError("No chains defined.")
+
+            if not self.assembly_abundances: raise ValueError("Please generate the assemblies first.")
+            ordered_names = [self.assemblies_tree.item(item_id)['values'][0] for item_id in self.assemblies_tree.get_children()]
+            intensity_scalars = [parse_float_entry(self.assembly_abundances[name].get(), f"Abundance for {name}") for name in ordered_names]
+
+            # Call the orchestration function and ask for data back
+            result = execute_antibody_simulation(
+                chains=chains, final_filepath="", update_queue=self.queue, return_data_only=True,
+                intensity_scalars=intensity_scalars,
+                mz_step_str=common_params['mz_step'],
+                peak_sigma_mz_str=common_params['peak_sigma_mz'],
+                mz_range_start_str=common_params['mz_range_start'],
+                mz_range_end_str=common_params['mz_range_end'],
+                noise_option=common_params['noise_option'],
+                seed=common_params['seed'],
+                lc_simulation_enabled=lc_params['lc_simulation_enabled'],
+                num_scans=lc_params['num_scans'],
+                scan_interval=lc_params['scan_interval'],
+                gaussian_std_dev=lc_params['gaussian_std_dev'],
+                lc_tailing_factor=lc_params['lc_tailing_factor'],
+                isotopic_enabled=common_params['isotopic_enabled'],
+                resolution=common_params['resolution'],
+                mass_inhomogeneity=0.0,
+                pink_noise_enabled=common_params['pink_noise_enabled'],
+            )
+
+            if result and isinstance(result, tuple):
+                mz_range, run_data = result
+                apex_scan_index = (lc_params['num_scans'] - 1) // 2
+                apex_scan_spectrum = run_data[apex_scan_index]
+                title = f"Antibody Spectrum Preview (Res: {common_params['resolution']/1000}k)"
+                self._show_plot(mz_range, {"Apex Scan Preview": apex_scan_spectrum}, title)
+            else:
+                # This case might be reached if an error happened in the logic
+                # that was sent to the queue but didn't raise an exception here.
+                messagebox.showerror("Preview Error", "Could not generate preview data. Check the log for details.")
+
+        except (ValueError, IndexError) as e:
+            messagebox.showerror("Preview Error", f"Invalid parameters for preview: {e}")
+        except Exception as e:
+            messagebox.showerror("Preview Error", f"An unexpected error occurred during preview: {e}")
 
     def _worker_generate_antibody_spectra(self):
         try:
