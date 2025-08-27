@@ -18,7 +18,7 @@ from ttkbootstrap.constants import PRIMARY
 from ttkbootstrap import widgets as ttk
 
 from ..core.constants import BASE_INTENSITY_SCALAR, noise_presets
-from ..core.lc import generate_gaussian_scaled_spectra
+from ..core.lc import apply_lc_profile_and_noise
 from ..core.spectrum import (generate_binding_spectrum,
                                generate_protein_spectrum)
 from ..logic.simulation import execute_simulation_and_write_mzml
@@ -99,6 +99,14 @@ class CombinedSpectrumSequenceApp:
             ("This tab is for generating spectra for one or more proteins. You can enter masses manually as a comma-separated list or provide a tab-delimited file with 'Protein' and 'Intensity' columns. The 'Save as Template...' button provides an easy way to create a valid file from the manual inputs.\n\n", "body"),
             ("Covalent Binding Tab\n", "bold"),
             ("This tab simulates a covalent binding screen. It takes a single protein average mass and a list of compounds (from a file with 'Name' and 'Delta' columns). For each compound, it probabilistically determines if binding occurs (and to what extent) and generates a corresponding spectrum containing native, singly-adducted (DAR-1), and doubly-adducted (DAR-2) species.\n\n", "body"),
+
+            ("Advanced Parameters\n", "h2"),
+            ("Mass Inhomogeneity:", "bold"),
+            (" In the 'Spectrum Generator' tab, this parameter models the natural heterogeneity of large molecules. It applies a Gaussian distribution to the input mass, simulating effects like conformational changes that broaden the final deconvoluted peak.\n", "body"),
+            ("LC Tailing Factor (tau):", "bold"),
+            (" This parameter, found in the 'LC Simulation' frame, controls the shape of the chromatographic peak. A value of 0 results in a perfect Gaussian peak, while larger values create an 'Exponentially Modified Gaussian' (EMG) with a more realistic tail, common in 'bind and elute' experiments.\n", "body"),
+            ("1/f (Pink) Noise:", "bold"),
+            (" This checkbox in the 'Noise & Output' frame adds an additional layer of 1/f noise, which can more accurately simulate noise from some electronic components.\n\n", "body"),
 
             ("Performance & Dependencies\n", "h2"),
             ("This application is highly optimized for performance and uses multiple CPU cores for batch processing. To run, it requires several external libraries. You can install them all with pip from the `requirements.txt` file:\n", "body"),
@@ -239,6 +247,11 @@ class CombinedSpectrumSequenceApp:
         params['noise_option_combobox'].grid(row=0, column=1, sticky=W, pady=2, padx=5)
         Tooltip(params['noise_option_combobox'], "Select a preset for the type and amount of noise to add to the spectrum.")
 
+        params['pink_noise_enabled_var'] = BooleanVar(value=False)
+        params['pink_noise_enabled_check'] = ttk.Checkbutton(out_frame, text="Enable 1/f Noise", variable=params['pink_noise_enabled_var'], bootstyle="primary-round-toggle")
+        params['pink_noise_enabled_check'].grid(row=0, column=2, sticky=W, padx=5)
+        Tooltip(params['pink_noise_enabled_check'], "Adds an additional layer of 1/f (pink) noise, which is common in electronic systems.")
+
         ttk.Label(out_frame, text="Output Directory:").grid(row=1, column=0, sticky=W, pady=2)
         params['output_directory_var'] = StringVar(value=os.getcwd())
         params['output_directory_entry'] = ttk.Entry(out_frame, textvariable=params['output_directory_var'])
@@ -295,7 +308,13 @@ class CombinedSpectrumSequenceApp:
         lc_params['gaussian_std_dev_entry'] = ttk.Entry(lc_frame, width=10)
         lc_params['gaussian_std_dev_entry'].insert(0, "1")
         lc_params['gaussian_std_dev_entry'].grid(row=2, column=1, sticky=W, pady=2, padx=5)
-        Tooltip(lc_params['gaussian_std_dev_entry'], "The width (standard deviation) of the LC peak, in units of scans.\nHigher values create a wider chromatographic peak.")
+        Tooltip(lc_params['gaussian_std_dev_entry'], "The width (standard deviation) of the Gaussian component of the LC peak, in units of scans.")
+
+        ttk.Label(lc_frame, text="LC Tailing Factor (tau):").grid(row=3, column=0, sticky=W, pady=2)
+        lc_params['lc_tailing_factor_entry'] = ttk.Entry(lc_frame, width=10)
+        lc_params['lc_tailing_factor_entry'].insert(0, "0.0")
+        lc_params['lc_tailing_factor_entry'].grid(row=3, column=1, sticky=W, pady=2, padx=5)
+        Tooltip(lc_params['lc_tailing_factor_entry'], "The exponential tailing factor (tau) for an Exponentially Modified Gaussian peak shape.\nSet to 0.0 for a pure Gaussian peak.")
 
         def _toggle():
             state = NORMAL if lc_params['enabled_var'].get() else DISABLED
@@ -344,6 +363,12 @@ class CombinedSpectrumSequenceApp:
         self.intensity_scalars_entry.insert(0, "1.0")
         self.intensity_scalars_entry.grid(row=4, column=1, columnspan=3, sticky=EW, pady=5, padx=5)
         Tooltip(self.intensity_scalars_entry, "A comma-separated list of relative intensity multipliers.\nMust match the number of protein masses.")
+
+        ttk.Label(in_frame, text="Mass Inhomogeneity (Std. Dev., Da):").grid(row=5, column=0, sticky=W, pady=5)
+        self.mass_inhomogeneity_entry = ttk.Entry(in_frame)
+        self.mass_inhomogeneity_entry.insert(0, "0.0")
+        self.mass_inhomogeneity_entry.grid(row=5, column=1, columnspan=3, sticky=EW, pady=5, padx=5)
+        Tooltip(self.mass_inhomogeneity_entry, "Standard deviation of protein mass distribution to simulate conformational broadening.\nSet to 0 to disable. A small value (e.g., 1-5 Da) is recommended.")
 
         # --- Common Parameters ---
         common_frame = ttk.Frame(main)
@@ -451,6 +476,9 @@ class CombinedSpectrumSequenceApp:
         """
         params = {}
         # Get values from StringVars and Entry widgets
+        # Safely get pink noise status, as this frame is shared
+        params['pink_noise_enabled'] = params_dict.get('pink_noise_enabled_var', BooleanVar(value=False)).get()
+
         for key, widget in params_dict.items():
             if 'var' in key:
                 params[key.replace('_var', '')] = widget.get()
@@ -463,8 +491,9 @@ class CombinedSpectrumSequenceApp:
             params['num_scans'] = int(lc_params_dict['num_scans_entry'].get())
             params['scan_interval'] = float(lc_params_dict['scan_interval_entry'].get())
             params['gaussian_std_dev'] = float(lc_params_dict['gaussian_std_dev_entry'].get())
+            params['lc_tailing_factor'] = float(lc_params_dict['lc_tailing_factor_entry'].get())
         else:
-            params['num_scans'], params['scan_interval'], params['gaussian_std_dev'] = 1, 0.0, 0.0
+            params['num_scans'], params['scan_interval'], params['gaussian_std_dev'], params['lc_tailing_factor'] = 1, 0.0, 0.0, 0.0
 
         # Handle random seed
         seed_str = params_dict['seed_var'].get().strip()
@@ -486,6 +515,7 @@ class CombinedSpectrumSequenceApp:
         try:
             protein_list = read_protein_list_file(self.protein_list_file_var.get())
             common_params = self._get_common_gen_params(self.spec_gen_params, self.spec_gen_lc_params)
+            common_params['mass_inhomogeneity'] = parse_float_entry(self.mass_inhomogeneity_entry.get(), "Mass Inhomogeneity")
         except (ValueError, FileNotFoundError) as e:
             self.queue.put(('error', str(e)))
             self.queue.put(('done', None))
@@ -518,6 +548,7 @@ class CombinedSpectrumSequenceApp:
         """
         try:
             common_params = self._get_common_gen_params(self.spec_gen_params, self.spec_gen_lc_params)
+            common_params['mass_inhomogeneity'] = parse_float_entry(self.mass_inhomogeneity_entry.get(), "Mass Inhomogeneity")
             mass_str = self.spectrum_protein_masses_entry.get()
             mass_list = [m.strip() for m in mass_str.split(',') if m.strip()]
             scalar_str = self.intensity_scalars_entry.get()
@@ -737,9 +768,9 @@ class CombinedSpectrumSequenceApp:
 
             # Apply LC and noise for the apex scan
             apex_scan_index = (params['num_scans'] - 1) // 2
-            apex_scan_spectrum = generate_gaussian_scaled_spectra(
+            apex_scan_spectrum = apply_lc_profile_and_noise(
                 mz_range, [clean_spec], params['num_scans'], params['gaussian_std_dev'],
-                params['seed'], params['noise_option'], None
+                params['lc_tailing_factor'], params['seed'], params['noise_option'], None
             )[0][apex_scan_index]
 
             title = f"Preview (Avg Mass: {protein_avg_mass:.0f} Da, Res: {params['resolution']/1000}k)"
@@ -784,9 +815,9 @@ class CombinedSpectrumSequenceApp:
 
             # Apply LC and noise
             apex_scan_index = (params['num_scans'] - 1) // 2
-            final_spec_noisy = generate_gaussian_scaled_spectra(
+            final_spec_noisy = apply_lc_profile_and_noise(
                 mz_range, [final_spec_clean], params['num_scans'], params['gaussian_std_dev'],
-                params['seed'], params['noise_option'], None
+                params['lc_tailing_factor'], params['seed'], params['noise_option'], None
             )[0][apex_scan_index]
 
             # Prepare data for plotting

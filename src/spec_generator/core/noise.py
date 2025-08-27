@@ -29,6 +29,36 @@ def _generate_perlin_like_noise_numba(n_points: int, mz_values: np.ndarray, scal
     return total_noise
 
 
+def generate_pink_noise(n_points: int, level: float) -> np.ndarray:
+    """
+    Generates 1/f (pink) noise using the Voss-McCartney algorithm.
+    """
+    # Number of octaves to sum
+    num_octaves = int(np.log2(n_points))
+
+    # Generate white noise for each octave
+    white_noises = [np.random.uniform(-1.0, 1.0, n_points) for _ in range(num_octaves)]
+
+    pink_noise = np.zeros(n_points, dtype=np.float64)
+
+    for i in range(num_octaves):
+        amplitude = 1 / (2**i)
+        # Downsample by taking every 2^i-th element
+        downsampled_noise = white_noises[i][::(2**i)]
+
+        # Interpolate back to the original size
+        interpolated_noise = np.interp(
+            np.linspace(0, len(downsampled_noise) - 1, n_points),
+            np.arange(len(downsampled_noise)),
+            downsampled_noise
+        )
+        pink_noise += interpolated_noise * amplitude
+
+    # Normalize and scale
+    pink_noise = pink_noise / np.max(np.abs(pink_noise))
+    return pink_noise * level
+
+
 def add_noise(
     mz_values: np.ndarray,
     intensities: np.ndarray,
@@ -42,10 +72,9 @@ def add_noise(
     perlin_octaves: int,
     baseline_wobble_amplitude: float,
     baseline_wobble_scale: float,
+    pink_noise_level: float,
+    pink_noise_enabled: bool,
     seed: int,
-    # These two are in the original signature but not used, so I am removing them.
-    # white_noise_decay_constant: float,
-    # baseline_wobble_decay_constant: float,
 ) -> np.ndarray:
     """
     Adds multiple layers of realistic noise to a spectrum.
@@ -53,11 +82,10 @@ def add_noise(
     rng = default_rng(seed)
 
     # Seed numpy's legacy random generator for Numba compatibility.
-    # This is required because nopython mode can't use the new Generator objects.
     np.random.seed(seed)
     total_perlin_chem = _generate_perlin_like_noise_numba(len(mz_values), mz_values, perlin_scale, octaves=perlin_octaves)
 
-    # Re-seed for the second call to get different noise pattern for the baseline wobble
+    # Re-seed for the second call to get different noise pattern
     np.random.seed(seed + 1)
     perlin_wobble = _generate_perlin_like_noise_numba(len(mz_values), mz_values, baseline_wobble_scale, octaves=1)
 
@@ -79,4 +107,10 @@ def add_noise(
     # 4. Low-frequency baseline wobble
     baseline_wobble = baseline_wobble_amplitude * perlin_wobble
 
-    return intensities + random_noise + baseline_wobble
+    # 5. Optional Pink Noise
+    pink_noise = 0.0
+    if pink_noise_enabled:
+        np.random.seed(seed + 2) # Re-seed for another different noise pattern
+        pink_noise = generate_pink_noise(len(mz_values), pink_noise_level * max_intensity)
+
+    return intensities + random_noise + baseline_wobble + pink_noise

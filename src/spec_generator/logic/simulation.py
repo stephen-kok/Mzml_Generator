@@ -2,7 +2,8 @@ import os
 import queue
 import numpy as np
 
-from ..core.lc import generate_scaled_spectra, generate_gaussian_scaled_spectra
+from ..core.lc import apply_lc_profile_and_noise
+from ..core.spectrum import generate_protein_spectrum
 from ..utils.mzml import create_mzml_content_et
 from ..utils.file_io import create_unique_filename
 
@@ -20,9 +21,12 @@ def execute_simulation_and_write_mzml(
     num_scans: int,
     scan_interval: float,
     gaussian_std_dev: float,
+    lc_tailing_factor: float,
     final_filepath: str,
     isotopic_enabled: bool,
     resolution: float,
+    mass_inhomogeneity: float,
+    pink_noise_enabled: bool,
     update_queue: queue.Queue | None,
 ) -> bool:
     """
@@ -75,19 +79,53 @@ def execute_simulation_and_write_mzml(
         # --- Core Simulation Steps ---
         mz_range = np.arange(mz_range_start_f, mz_range_end_f + mz_step_float, mz_step_float)
 
-        _, all_clean_spectra = generate_scaled_spectra(
-            protein_masses_list, mz_range, mz_step_float, peak_sigma_mz_float,
-            intensity_scalars, isotopic_enabled, resolution, update_queue
-        )
-        if all_clean_spectra is None:  # An error occurred in generate_scaled_spectra
+        all_clean_spectra = []
+        num_proteins = len(protein_masses_list)
+        progress_per_protein = (50 / num_proteins) if num_proteins > 0 else 0
+
+        for i, protein_mass in enumerate(protein_masses_list):
+            if update_queue:
+                update_queue.put(('log', f"Generating base spectrum for Protein (Mass: {protein_mass})...\n"))
+
+            if mass_inhomogeneity > 0:
+                # Simulate a distribution of masses to model peak broadening
+                num_samples = 7  # Use a small number of samples for performance
+                mass_distribution = np.random.normal(loc=protein_mass, scale=mass_inhomogeneity, size=num_samples)
+
+                total_spectrum = np.zeros_like(mz_range, dtype=float)
+                for sub_mass in mass_distribution:
+                    # We will need to import generate_protein_spectrum for this
+                    spectrum = generate_protein_spectrum(
+                        sub_mass, mz_range, mz_step_float, peak_sigma_mz_float,
+                        intensity_scalars[i], isotopic_enabled, resolution
+                    )
+                    total_spectrum += spectrum
+                # Average the spectra from the distribution
+                clean_spectrum = total_spectrum / num_samples
+            else:
+                # Original behavior: simulate a single, perfectly defined mass
+                clean_spectrum = generate_protein_spectrum(
+                    protein_mass, mz_range, mz_step_float, peak_sigma_mz_float,
+                    intensity_scalars[i], isotopic_enabled, resolution
+                )
+
+            all_clean_spectra.append(clean_spectrum)
+
+            if update_queue:
+                update_queue.put(('progress_add', progress_per_protein))
+
+        if not all_clean_spectra:
+            # This case should ideally not be reached if validation is correct
+            if update_queue:
+                update_queue.put(('error', "Spectrum generation failed for an unknown reason."))
             return False
 
         if update_queue:
             update_queue.put(('progress_set', 55))
 
-        spectra_for_mzml = generate_gaussian_scaled_spectra(
+        spectra_for_mzml = apply_lc_profile_and_noise(
             mz_range, all_clean_spectra, scans_to_gen, gaussian_std_dev,
-            seed, noise_option, update_queue
+            lc_tailing_factor, seed, noise_option, pink_noise_enabled, update_queue
         )
 
         mzml_content = create_mzml_content_et(

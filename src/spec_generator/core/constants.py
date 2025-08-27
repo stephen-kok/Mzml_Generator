@@ -12,12 +12,12 @@ noise_presets = {
         "base_noise_level": 0.05, "decay_constant": 200.0, "white_noise_level": 0.002,
         "shot_noise_factor": 0.01, "perlin_scale": 50.0, "perlin_octaves": 4,
         "baseline_wobble_amplitude": 0.1, "baseline_wobble_scale": 100.0,
-        "white_noise_decay_constant": 200.0, "baseline_wobble_decay_constant": 300.0,
+        "pink_noise_level": 0.05,
     },
     "Noisy": {
         "base_noise_level": 5.0, "decay_constant": 250.0, "white_noise_level": 0.05,
         "shot_noise_factor": 0.08, "perlin_scale": 50.0, "perlin_octaves": 4,
         "baseline_wobble_amplitude": 3.0, "baseline_wobble_scale": 500.0,
-        "white_noise_decay_constant": 600.0, "baseline_wobble_decay_constant": 1500.0,
+        "pink_noise_level": 0.5,
     },
 }
