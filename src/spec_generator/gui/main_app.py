@@ -948,7 +948,7 @@ class CombinedSpectrumSequenceApp:
                 self.assembly_abundances[name] = abundance_var
 
                 item_id = self.assemblies_tree.insert("", "end", values=(name, mass_str, bonds_str, ''))
-
+                
                 entry = ttk.Entry(self.assemblies_tree, textvariable=abundance_var, width=8, justify='right')
                 self.assemblies_tree.window_create(item_id, column="Abundance", window=entry)
 
