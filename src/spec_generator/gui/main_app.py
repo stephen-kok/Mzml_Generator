@@ -877,6 +877,7 @@ class CombinedSpectrumSequenceApp:
         tree_scroll = ttk.Scrollbar(assemblies_frame, orient="vertical", command=self.assemblies_tree.yview)
         self.assemblies_tree.configure(yscrollcommand=tree_scroll.set)
         tree_scroll.grid(row=0, column=1, sticky="ns")
+        self.assemblies_tree.bind("<Double-1>", self._on_treeview_double_click)
 
         preview_button = ttk.Button(assemblies_frame, text="Generate / Refresh Assemblies", command=self._preview_assemblies_command, style='Outline.TButton')
         preview_button.grid(row=1, column=0, columnspan=2, pady=(10,0))
@@ -947,10 +948,8 @@ class CombinedSpectrumSequenceApp:
                 abundance_var = StringVar(value="1.0")
                 self.assembly_abundances[name] = abundance_var
 
-                item_id = self.assemblies_tree.insert("", "end", values=(name, mass_str, bonds_str, ''))
-                
-                entry = ttk.Entry(self.assemblies_tree, textvariable=abundance_var, width=8, justify='right')
-                self.assemblies_tree.window_create(item_id, column="Abundance", window=entry)
+                # The abundance value is now just text, not an embedded widget
+                self.assemblies_tree.insert("", "end", values=(name, mass_str, bonds_str, abundance_var.get()))
 
             self.queue.put(('log', f"Successfully generated {len(assemblies_with_mass)} species. You can now edit their relative abundances.\n"))
 
@@ -962,6 +961,36 @@ class CombinedSpectrumSequenceApp:
         self.antibody_progress_bar["value"] = 0
         self.queue.put(('clear_log', None))
         threading.Thread(target=self._worker_generate_antibody_spectra, daemon=True).start()
+
+    def _on_treeview_double_click(self, event):
+        """Handle double-clicks to enable editing of the Abundance column."""
+        region = self.assemblies_tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+
+        column_id = self.assemblies_tree.identify_column(event.x)
+        # We only want to edit the "Abundance" column, which is #4
+        if column_id != "#4":
+            return
+
+        item_id = self.assemblies_tree.identify_row(event.y)
+        assembly_name = self.assemblies_tree.item(item_id, "values")[0]
+
+        x, y, width, height = self.assemblies_tree.bbox(item_id, column_id)
+
+        # Create a temporary Entry widget
+        entry_var = self.assembly_abundances[assembly_name]
+        entry = ttk.Entry(self.assemblies_tree, textvariable=entry_var, justify='right')
+        entry.place(x=x, y=y, width=width, height=height)
+        entry.focus_set()
+
+        def save_edit(event=None):
+            new_value = entry_var.get()
+            self.assemblies_tree.set(item_id, column_id, new_value)
+            entry.destroy()
+
+        entry.bind("<Return>", save_edit)
+        entry.bind("<FocusOut>", save_edit)
 
     def _worker_generate_antibody_spectra(self):
         try:
