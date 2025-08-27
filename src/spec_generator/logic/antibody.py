@@ -28,7 +28,7 @@ def calculate_assembly_masses(chains: list[dict], assemblies: list[dict]) -> lis
             try:
                 sequence = chain['seq'].upper()
                 chain_info[chain['name']] = {
-                    'mass': mass.calculate_mass(sequence=sequence),
+                    'mass': mass.calculate_mass(sequence=sequence, average=True),
                     'cys_count': sequence.count('C')
                 }
             except Exception as e:
@@ -182,8 +182,12 @@ def generate_assembly_combinations(chains: list[dict]) -> list[dict]:
         for lc in lcs:
             assemblies.add(tuple(sorted(hh + (lc,))))
 
-    # 4. Tetramers (Full Antibodies, H2L2)
+    # 4. Tetramers (Full Antibodies, H2L2) and LC-LC Dimers
     ll_pairs = list(combinations_with_replacement(lcs, 2))
+    # Add LC-LC dimers to the assemblies
+    for ll in ll_pairs:
+        assemblies.add(tuple(sorted(ll)))
+
     for hh in hh_dimers:
         for ll in ll_pairs:
             assemblies.add(tuple(sorted(hh + ll)))
