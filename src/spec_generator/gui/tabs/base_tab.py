@@ -28,7 +28,7 @@ class BaseTab(ttk.Frame):
         """
         raise NotImplementedError
 
-    def _gather_common_params(self, params_dict, lc_params_dict):
+    def _gather_common_params(self, params_dict, lc_params_dict=None):
         seed_str = params_dict['seed_var'].get().strip()
         if seed_str:
             seed = int(seed_str)
@@ -40,6 +40,8 @@ class BaseTab(ttk.Frame):
             isotopic_enabled=params_dict['isotopic_enabled_var'].get(),
             resolution=float(params_dict['resolution_entry'].get()) * 1000,
             peak_sigma_mz=float(params_dict['peak_sigma_mz_entry'].get()),
+            mass_dependent_peak_width=params_dict['mass_dependent_peak_width_var'].get(),
+            peak_width_scaling_factor=float(params_dict['peak_width_scaling_factor_entry'].get()),
             mz_step=float(params_dict['mz_step_entry'].get()),
             mz_range_start=float(params_dict['mz_range_start_entry'].get()),
             mz_range_end=float(params_dict['mz_range_end_entry'].get()),
@@ -50,14 +52,16 @@ class BaseTab(ttk.Frame):
             filename_template=params_dict['filename_template_var'].get(),
         )
 
-        lc_enabled = lc_params_dict['enabled_var'].get()
-        lc = LCParams(
-            enabled=lc_enabled,
-            num_scans=int(lc_params_dict['num_scans_entry'].get()) if lc_enabled else 1,
-            scan_interval=float(lc_params_dict['scan_interval_entry'].get()) if lc_enabled else 0.0,
-            gaussian_std_dev=float(lc_params_dict['gaussian_std_dev_entry'].get()) if lc_enabled else 0.0,
-            lc_tailing_factor=float(lc_params_dict['lc_tailing_factor_entry'].get()) if lc_enabled else 0.0,
-        )
+        lc = None
+        if lc_params_dict:
+            lc_enabled = lc_params_dict['enabled_var'].get()
+            lc = LCParams(
+                enabled=lc_enabled,
+                num_scans=int(lc_params_dict['num_scans_entry'].get()) if lc_enabled else 1,
+                scan_interval=float(lc_params_dict['scan_interval_entry'].get()) if lc_enabled else 0.0,
+                gaussian_std_dev=float(lc_params_dict['gaussian_std_dev_entry'].get()) if lc_enabled else 0.0,
+                lc_tailing_factor=float(lc_params_dict['lc_tailing_factor_entry'].get()) if lc_enabled else 0.0,
+            )
         return common, lc
 
     def get_log_widgets(self):

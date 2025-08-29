@@ -5,6 +5,7 @@ for standard and bispecific antibodies.
 """
 from itertools import combinations_with_replacement
 from pyteomics import mass
+from pyteomics.mass import Composition
 import math
 import queue
 from dataclasses import asdict
@@ -26,12 +27,25 @@ def calculate_assembly_masses(chains: list[dict], assemblies: list[dict]) -> lis
         The list of assembly dicts, with 'mass' and 'bonds' keys added.
     """
     chain_info = {}
+    water_mass_loss = mass.calculate_mass(formula='H2O', average=True)
+
     for chain in chains:
         if chain['name'] not in chain_info:
             try:
                 sequence = chain['seq'].upper()
+                k_loss = chain.get('k_loss', False)
+                pyro_glu = chain.get('pyro_glu', False)
+
+                if k_loss and sequence.endswith('K'):
+                    sequence = sequence[:-1]
+
+                chain_mass = mass.calculate_mass(sequence=sequence, average=True)
+
+                if pyro_glu and (sequence.startswith('E') or sequence.startswith('Q')):
+                    chain_mass -= water_mass_loss
+
                 chain_info[chain['name']] = {
-                    'mass': mass.calculate_mass(sequence=sequence, average=True),
+                    'mass': chain_mass,
                     'cys_count': sequence.count('C')
                 }
             except Exception as e:

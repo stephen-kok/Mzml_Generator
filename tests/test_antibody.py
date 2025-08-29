@@ -11,12 +11,12 @@ from spec_generator.core.constants import DISULFIDE_MASS_LOSS
 class TestAntibodyLogic(unittest.TestCase):
     def setUp(self):
         self.chains = [
-            Chain(type='HC', name='H1', seq='PEPTIDE'),
-            Chain(type='LC', name='L1', seq='SEQUENCE'),
+            Chain(type='HC', name='H1', seq='PEPTIDE', pyro_glu=False, k_loss=False),
+            Chain(type='LC', name='L1', seq='SEQUENCE', pyro_glu=False, k_loss=False),
         ]
         self.chains_with_cys = [
-            Chain(type='HC', name='H_cys', seq='PEPTIDEC'),
-            Chain(type='LC', name='L_cys', seq='SEQUENCEC'),
+            Chain(type='HC', name='H_cys', seq='PEPTIDEC', pyro_glu=False, k_loss=False),
+            Chain(type='LC', name='L_cys', seq='SEQUENCEC', pyro_glu=False, k_loss=False),
         ]
 
     def test_generate_assembly_combinations(self):
@@ -58,7 +58,7 @@ class TestAntibodyLogic(unittest.TestCase):
         self.assertAlmostEqual(assemblies_with_mass[0]['mass'], expected_mass, places=2)
 
     def test_invalid_sequence_raises_error(self):
-        chains_invalid = [asdict(Chain(type='HC', name='H_invalid', seq='INVALID_SEQUENCE'))]
+        chains_invalid = [asdict(Chain(type='HC', name='H_invalid', seq='INVALID_SEQUENCE', pyro_glu=False, k_loss=False))]
         assemblies = [{'name': 'H_invalid', 'components': ['H_invalid']}]
         with self.assertRaisesRegex(ValueError, "Could not process chain H_invalid"):
             calculate_assembly_masses(chains_invalid, assemblies)

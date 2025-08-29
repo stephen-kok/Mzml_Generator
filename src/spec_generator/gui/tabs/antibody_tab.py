@@ -1,8 +1,9 @@
 import os
 import threading
+from dataclasses import asdict
 from datetime import datetime
 from tkinter import (HORIZONTAL, LEFT, NORMAL, DISABLED, NSEW, SUNKEN, WORD,
-                     StringVar, messagebox, Text, E)
+                     StringVar, messagebox, Text, E, BooleanVar)
 
 from ttkbootstrap import widgets as ttk
 from ttkbootstrap.constants import PRIMARY
@@ -83,10 +84,6 @@ class AntibodyTab(BaseTab):
         action_frame = ttk.Frame(gen_frame)
         action_frame.pack(pady=(10,0))
 
-        self.antibody_preview_spec_button = ttk.Button(action_frame, text="Preview Spectrum", command=self._preview_antibody_spectrum_command, style='Outline.TButton')
-        self.antibody_preview_spec_button.pack(side=LEFT, padx=5)
-        Tooltip(self.antibody_preview_spec_button, "Generate and display a plot of the apex scan of the simulated spectrum.")
-
         self.antibody_generate_button = ttk.Button(action_frame, text="Generate mzML File", command=self.generate_antibody_spectra_command, bootstyle=PRIMARY)
         self.antibody_generate_button.pack(side=LEFT, padx=5)
 
@@ -104,16 +101,32 @@ class AntibodyTab(BaseTab):
         log_scroll.grid(row=1, column=1, sticky="ns")
         self.output_text['yscrollcommand'] = log_scroll.set
 
-    def _gather_config(self) -> AntibodySimConfig:
-        common, lc = self._gather_common_params(self.antibody_params, self.antibody_lc_params)
-
+    def _gather_chains(self) -> list[Chain]:
         chains = []
         for entry in self.chain_entries:
             seq = entry['seq_var'].get().strip().upper()
             name = entry['name_var'].get().strip()
             if not seq or not name:
                 raise ValueError("All chain sequences and names must be provided.")
-            chains.append(Chain(type=entry['type'], name=name, seq=seq))
+
+            pyro_glu = entry.get('pyro_glu_var') and entry['pyro_glu_var'].get()
+            k_loss = entry.get('k_loss_var') and entry['k_loss_var'].get()
+
+            modified_name = name
+            if pyro_glu:
+                modified_name += "[pyro-E]"
+            if k_loss:
+                modified_name += "[-K]"
+
+            chains.append(Chain(
+                type=entry['type'], name=modified_name, seq=seq,
+                pyro_glu=pyro_glu, k_loss=k_loss
+            ))
+        return chains
+
+    def _gather_config(self) -> AntibodySimConfig:
+        common, lc = self._gather_common_params(self.antibody_params, self.antibody_lc_params)
+        chains = self._gather_chains()
 
         if not self.assembly_abundances:
             raise ValueError("Please generate the assemblies first.")
@@ -153,13 +166,29 @@ class AntibodyTab(BaseTab):
         chain_name_entry = ttk.Entry(self.chain_inner_frame, textvariable=name_var, width=10)
         chain_name_entry.grid(row=row, column=2, sticky="w", pady=2, padx=5)
 
-        remove_button = ttk.Button(self.chain_inner_frame, text="X", command=remove_chain_row, width=2, bootstyle="danger-outline")
-        remove_button.grid(row=row, column=3, sticky="w", pady=2, padx=5)
+        widgets = [chain_label, chain_seq_entry, chain_name_entry]
+        entry_data = {'id': id(seq_var), 'type': chain_type, 'seq_var': seq_var, 'name_var': name_var}
 
-        entry_data = {
-            'id': id(seq_var), 'type': chain_type, 'seq_var': seq_var, 'name_var': name_var,
-            'widgets': [chain_label, chain_seq_entry, chain_name_entry, remove_button]
-        }
+        if chain_type == "HC":
+            pyro_glu_var = BooleanVar(value=False)
+            pyro_glu_check = ttk.Checkbutton(self.chain_inner_frame, text="pyro-E", variable=pyro_glu_var, bootstyle="round-toggle")
+            pyro_glu_check.grid(row=row, column=3, sticky="w", pady=2, padx=5)
+            Tooltip(pyro_glu_check, "N-terminal pyro-glutamate formation from Q or E.")
+            widgets.append(pyro_glu_check)
+            entry_data['pyro_glu_var'] = pyro_glu_var
+
+            k_loss_var = BooleanVar(value=False)
+            k_loss_check = ttk.Checkbutton(self.chain_inner_frame, text="-K", variable=k_loss_var, bootstyle="round-toggle")
+            k_loss_check.grid(row=row, column=4, sticky="w", pady=2, padx=5)
+            Tooltip(k_loss_check, "C-terminal lysine (K) cleavage.")
+            widgets.append(k_loss_check)
+            entry_data['k_loss_var'] = k_loss_var
+
+        remove_button = ttk.Button(self.chain_inner_frame, text="X", command=remove_chain_row, width=2, bootstyle="danger-outline")
+        remove_button.grid(row=row, column=5, sticky="w", pady=2, padx=5)
+        widgets.append(remove_button)
+
+        entry_data['widgets'] = widgets
         self.chain_entries.append(entry_data)
         self.chain_inner_frame.columnconfigure(1, weight=1)
 
@@ -172,19 +201,19 @@ class AntibodyTab(BaseTab):
                 self.assemblies_tree.delete(item)
             self.assembly_abundances.clear()
 
-            chains = []
-            for entry in self.chain_entries:
-                seq = entry['seq_var'].get().strip().upper()
-                name = entry['name_var'].get().strip()
-                if not seq or not name:
-                    raise ValueError("All chain sequences and names must be provided.")
-                chains.append(Chain(type=entry['type'], name=name, seq=seq))
+            chains = self._gather_chains()
 
             if not chains:
                 raise ValueError("No chains defined.")
 
-            assemblies = generate_assembly_combinations(chains)
-            assemblies_with_mass = calculate_assembly_masses(chains, assemblies)
+            # Convert chain objects to dicts for the logic functions
+            chains_as_dicts = [asdict(c) for c in chains]
+
+            assemblies = generate_assembly_combinations(chains_as_dicts)
+            assemblies_with_mass = calculate_assembly_masses(chains_as_dicts, assemblies)
+
+            # Sort by mass in ascending order
+            assemblies_with_mass.sort(key=lambda x: x['mass'])
 
             for assembly in assemblies_with_mass:
                 name = assembly['name']
@@ -225,31 +254,6 @@ class AntibodyTab(BaseTab):
 
         entry.bind("<Return>", save_edit)
         entry.bind("<FocusOut>", save_edit)
-
-    def _preview_antibody_spectrum_command(self):
-        try:
-            config = self._gather_config()
-
-            result = execute_antibody_simulation(
-                config=config,
-                final_filepath="",
-                update_queue=self.app_queue,
-                return_data_only=True
-            )
-
-            if result and isinstance(result, tuple):
-                mz_range, run_data = result
-                apex_scan_index = (config.lc.num_scans - 1) // 2
-                apex_scan_spectrum = run_data[apex_scan_index]
-                title = f"Antibody Spectrum Preview (Res: {config.common.resolution/1000}k)"
-                show_plot(mz_range, {"Apex Scan Preview": apex_scan_spectrum}, title)
-            else:
-                messagebox.showerror("Preview Error", "Could not generate preview data. Check the log for details.")
-
-        except (ValueError, IndexError) as e:
-            messagebox.showerror("Preview Error", f"Invalid parameters for preview: {e}")
-        except Exception as e:
-            messagebox.showerror("Preview Error", f"An unexpected error occurred during preview: {e}")
 
     def _worker_generate_antibody_spectra(self):
         try:

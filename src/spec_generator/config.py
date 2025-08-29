@@ -9,6 +9,8 @@ class CommonParams:
     isotopic_enabled: bool
     resolution: float
     peak_sigma_mz: float
+    mass_dependent_peak_width: bool
+    peak_width_scaling_factor: float
     mz_step: float
     mz_range_start: float
     mz_range_end: float
@@ -63,6 +65,8 @@ class Chain:
     type: str
     name: str
     seq: str
+    pyro_glu: bool
+    k_loss: bool
 
 @dataclass
 class AntibodySimConfig:

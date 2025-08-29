@@ -15,6 +15,8 @@ class TestSimulation(unittest.TestCase):
             isotopic_enabled=True,
             resolution=120000,
             peak_sigma_mz=0.01,
+            mass_dependent_peak_width=False,
+            peak_width_scaling_factor=0.0,
             mz_step=0.02,
             mz_range_start=400.0,
             mz_range_end=2500.0,

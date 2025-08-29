@@ -36,13 +36,10 @@ def execute_binding_simulation(
             protein_avg_mass=config.protein_avg_mass,
             compound_avg_mass=compound_mass,
             mz_range=mz_range,
-            mz_step_float=common.mz_step,
-            peak_sigma_mz_float=common.peak_sigma_mz,
+            common_params=common,
             total_binding_percentage=total_binding_percentage,
             dar2_percentage_of_bound=dar2_percentage_of_bound,
             original_intensity_scalar=BASE_INTENSITY_SCALAR,
-            isotopic_enabled=common.isotopic_enabled,
-            resolution=common.resolution
         )
 
         # 2. Apply LC profile and noise

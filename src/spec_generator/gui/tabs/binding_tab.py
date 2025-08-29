@@ -174,14 +174,14 @@ class BindingTab(BaseTab):
 
             mz_range = np.arange(config.common.mz_range_start, config.common.mz_range_end + config.common.mz_step, config.common.mz_step)
 
-            base_native_spec = generate_protein_spectrum(config.protein_avg_mass, mz_range, config.common.mz_step, config.common.peak_sigma_mz, BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution)
-            base_dar1_spec = generate_protein_spectrum(config.protein_avg_mass + compound_avg_mass, mz_range, config.common.mz_step, config.common.peak_sigma_mz, BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution)
-            base_dar2_spec = generate_protein_spectrum(config.protein_avg_mass + 2 * compound_avg_mass, mz_range, config.common.mz_step, config.common.peak_sigma_mz, BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution)
+            base_native_spec = generate_protein_spectrum(config.protein_avg_mass, mz_range, config.common, BASE_INTENSITY_SCALAR)
+            base_dar1_spec = generate_protein_spectrum(config.protein_avg_mass + compound_avg_mass, mz_range, config.common, BASE_INTENSITY_SCALAR)
+            base_dar2_spec = generate_protein_spectrum(config.protein_avg_mass + 2 * compound_avg_mass, mz_range, config.common, BASE_INTENSITY_SCALAR)
 
             final_spec_clean = generate_binding_spectrum(
-                config.protein_avg_mass, compound_avg_mass, mz_range, config.common.mz_step,
-                config.common.peak_sigma_mz, total_binding_pct, dar2_pct_of_bound,
-                BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution
+                config.protein_avg_mass, compound_avg_mass, mz_range, config.common,
+                total_binding_pct, dar2_pct_of_bound,
+                BASE_INTENSITY_SCALAR
             )
 
             apex_scan_index = (config.lc.num_scans - 1) // 2

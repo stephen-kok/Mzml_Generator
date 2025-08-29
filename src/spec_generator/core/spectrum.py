@@ -51,21 +51,21 @@ def _build_spectrum_from_peaks_numba(
     return final_spectrum
 
 
+from ..config import CommonParams
+
+
 def generate_protein_spectrum(
     protein_avg_mass: float,
     mz_range: np.ndarray,
-    mz_step_float: float,
-    peak_sigma_mz_float: float,
+    common_params: CommonParams,
     intensity_scalar: float,
-    isotopic_enabled: bool,
-    resolution: float
 ) -> np.ndarray:
     """
     Generates a single, clean protein spectrum including isotopic distribution
     and charge state envelope.
     """
     # Determine monoisotopic mass from average mass
-    if isotopic_enabled:
+    if common_params.isotopic_enabled:
         isotopic_distribution, most_abundant_offset = isotope_calculator.get_distribution(protein_avg_mass)
         protein_mono_mass = protein_avg_mass - most_abundant_offset
     else:
@@ -111,9 +111,14 @@ def generate_protein_spectrum(
         all_peak_mzs.extend(visible_mzs)
         all_peak_intensities.extend(base_intensity * isotope_rel_intensities[visible_mask])
 
-        sigma_intrinsic = peak_sigma_mz_float * (visible_mzs / MZ_SCALE_FACTOR)
-        if isotopic_enabled and resolution > 0:
-            sigma_resolution = (visible_mzs / resolution) / FWHM_TO_SIGMA
+        # Calculate base sigma, applying mass-dependent scaling if enabled
+        base_sigma = common_params.peak_sigma_mz
+        if common_params.mass_dependent_peak_width:
+            base_sigma += protein_avg_mass * common_params.peak_width_scaling_factor
+
+        sigma_intrinsic = base_sigma * (visible_mzs / MZ_SCALE_FACTOR)
+        if common_params.isotopic_enabled and common_params.resolution > 0:
+            sigma_resolution = (visible_mzs / common_params.resolution) / FWHM_TO_SIGMA
             total_sigma = np.sqrt(sigma_intrinsic**2 + sigma_resolution**2)
         else:
             total_sigma = sigma_intrinsic
@@ -182,13 +187,10 @@ def generate_binding_spectrum(
     protein_avg_mass: float,
     compound_avg_mass: float,
     mz_range: np.ndarray,
-    mz_step_float: float,
-    peak_sigma_mz_float: float,
+    common_params: CommonParams,
     total_binding_percentage: float,
     dar2_percentage_of_bound: float,
     original_intensity_scalar: float,
-    isotopic_enabled: bool,
-    resolution: float
 ) -> np.ndarray:
     """
     Generates a spectrum for a covalent binding scenario, including native,
@@ -206,22 +208,21 @@ def generate_binding_spectrum(
 
     # Generate spectrum for each species
     native_spectrum = generate_protein_spectrum(
-        protein_avg_mass, mz_range, mz_step_float, peak_sigma_mz_float,
-        native_intensity_scalar, isotopic_enabled, resolution
+        protein_avg_mass, mz_range, common_params, native_intensity_scalar
     )
 
     dar1_spectrum = np.zeros_like(mz_range)
     if dar1_intensity_scalar > 0:
         dar1_spectrum = generate_protein_spectrum(
-            protein_avg_mass + compound_avg_mass, mz_range, mz_step_float,
-            peak_sigma_mz_float, dar1_intensity_scalar, isotopic_enabled, resolution
+            protein_avg_mass + compound_avg_mass, mz_range, common_params,
+            dar1_intensity_scalar
         )
 
     dar2_spectrum = np.zeros_like(mz_range)
     if dar2_intensity_scalar > 0:
         dar2_spectrum = generate_protein_spectrum(
-            protein_avg_mass + 2 * compound_avg_mass, mz_range, mz_step_float,
-            peak_sigma_mz_float, dar2_intensity_scalar, isotopic_enabled, resolution
+            protein_avg_mass + 2 * compound_avg_mass, mz_range, common_params,
+            dar2_intensity_scalar
         )
 
     return native_spectrum + dar1_spectrum + dar2_spectrum
