@@ -73,3 +73,25 @@ class AntibodySimConfig:
     lc: LCParams
     chains: List[Chain]
     assembly_abundances: Dict[str, float]
+
+
+@dataclass
+class PeptideMapLCParams:
+    """
+    Data class for LC parameters specific to peptide map simulations.
+    """
+    run_time: float  # in minutes
+    scan_interval: float  # in seconds
+    peak_width_seconds: float # peak width at base in seconds
+
+
+@dataclass
+class PeptideMapSimConfig:
+    """
+    Configuration for the Peptide Map simulation.
+    """
+    common: CommonParams
+    lc: PeptideMapLCParams
+    sequence: str
+    missed_cleavages: int
+    charge_state: int
