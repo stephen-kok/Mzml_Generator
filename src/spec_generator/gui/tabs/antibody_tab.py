@@ -84,10 +84,6 @@ class AntibodyTab(BaseTab):
         action_frame = ttk.Frame(gen_frame)
         action_frame.pack(pady=(10,0))
 
-        self.antibody_preview_spec_button = ttk.Button(action_frame, text="Preview Spectrum", command=self._preview_antibody_spectrum_command, style='Outline.TButton')
-        self.antibody_preview_spec_button.pack(side=LEFT, padx=5)
-        Tooltip(self.antibody_preview_spec_button, "Generate and display a plot of the apex scan of the simulated spectrum.")
-
         self.antibody_generate_button = ttk.Button(action_frame, text="Generate mzML File", command=self.generate_antibody_spectra_command, bootstyle=PRIMARY)
         self.antibody_generate_button.pack(side=LEFT, padx=5)
 
@@ -189,6 +185,8 @@ class AntibodyTab(BaseTab):
 
             assemblies = generate_assembly_combinations(chains_as_dicts)
             assemblies_with_mass = calculate_assembly_masses(chains_as_dicts, assemblies)
+            # Sort by mass in ascending order
+            assemblies_with_mass.sort(key=lambda x: x['mass'])
 
             for assembly in assemblies_with_mass:
                 name = assembly['name']
@@ -229,31 +227,6 @@ class AntibodyTab(BaseTab):
 
         entry.bind("<Return>", save_edit)
         entry.bind("<FocusOut>", save_edit)
-
-    def _preview_antibody_spectrum_command(self):
-        try:
-            config = self._gather_config()
-
-            result = execute_antibody_simulation(
-                config=config,
-                final_filepath="",
-                update_queue=self.app_queue,
-                return_data_only=True
-            )
-
-            if result and isinstance(result, tuple):
-                mz_range, run_data = result
-                apex_scan_index = (config.lc.num_scans - 1) // 2
-                apex_scan_spectrum = run_data[apex_scan_index]
-                title = f"Antibody Spectrum Preview (Res: {config.common.resolution/1000}k)"
-                show_plot(mz_range, {"Apex Scan Preview": apex_scan_spectrum}, title)
-            else:
-                messagebox.showerror("Preview Error", "Could not generate preview data. Check the log for details.")
-
-        except (ValueError, IndexError) as e:
-            messagebox.showerror("Preview Error", f"Invalid parameters for preview: {e}")
-        except Exception as e:
-            messagebox.showerror("Preview Error", f"An unexpected error occurred during preview: {e}")
 
     def _worker_generate_antibody_spectra(self):
         try:
