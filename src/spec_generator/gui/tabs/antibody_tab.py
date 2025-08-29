@@ -1,5 +1,6 @@
 import os
 import threading
+from dataclasses import asdict
 from datetime import datetime
 from tkinter import (HORIZONTAL, LEFT, NORMAL, DISABLED, NSEW, SUNKEN, WORD,
                      StringVar, messagebox, Text, E)
@@ -183,8 +184,11 @@ class AntibodyTab(BaseTab):
             if not chains:
                 raise ValueError("No chains defined.")
 
-            assemblies = generate_assembly_combinations(chains)
-            assemblies_with_mass = calculate_assembly_masses(chains, assemblies)
+            # Convert chain objects to dicts for the logic functions
+            chains_as_dicts = [asdict(c) for c in chains]
+
+            assemblies = generate_assembly_combinations(chains_as_dicts)
+            assemblies_with_mass = calculate_assembly_masses(chains_as_dicts, assemblies)
 
             for assembly in assemblies_with_mass:
                 name = assembly['name']
