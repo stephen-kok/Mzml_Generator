@@ -5,9 +5,13 @@ for standard and bispecific antibodies.
 """
 from itertools import combinations_with_replacement
 from pyteomics import mass
-
 import math
+import queue
+from dataclasses import asdict
+
 from ..core.constants import DISULFIDE_MASS_LOSS
+from .simulation import execute_simulation_and_write_mzml
+from ..config import AntibodySimConfig, SpectrumGeneratorConfig
 
 def calculate_assembly_masses(chains: list[dict], assemblies: list[dict]) -> list[dict]:
     """
@@ -21,7 +25,6 @@ def calculate_assembly_masses(chains: list[dict], assemblies: list[dict]) -> lis
     Returns:
         The list of assembly dicts, with 'mass' and 'bonds' keys added.
     """
-    # 1. Calculate and cache info for each unique chain
     chain_info = {}
     for chain in chains:
         if chain['name'] not in chain_info:
@@ -34,7 +37,6 @@ def calculate_assembly_masses(chains: list[dict], assemblies: list[dict]) -> lis
             except Exception as e:
                 raise ValueError(f"Could not process chain {chain['name']}. Invalid sequence? Error: {e}")
 
-    # 2. Calculate mass for each assembly
     for assembly in assemblies:
         total_sequence_mass = 0
         total_cys_count = 0
@@ -50,48 +52,27 @@ def calculate_assembly_masses(chains: list[dict], assemblies: list[dict]) -> lis
 
     return assemblies
 
-import queue
-from .simulation import execute_simulation_and_write_mzml
-
 def execute_antibody_simulation(
-    chains: list[dict],
+    config: AntibodySimConfig,
     final_filepath: str,
     update_queue: queue.Queue | None,
-    # Simulation parameters:
-    intensity_scalars: list[float],
-    mz_step_str: str,
-    peak_sigma_mz_str: str,
-    mz_range_start_str: str,
-    mz_range_end_str: str,
-    noise_option: str,
-    seed: int,
-    lc_simulation_enabled: bool,
-    num_scans: int,
-    scan_interval: float,
-    gaussian_std_dev: float,
-    lc_tailing_factor: float,
-    isotopic_enabled: bool,
-    resolution: float,
-    mass_inhomogeneity: float,
-
-    pink_noise_enabled: bool,
     return_data_only: bool = False
-
 ):
     """
     Orchestrates the full antibody simulation process by generating assemblies,
     calculating their masses, and feeding them into the core simulation engine.
     """
     try:
-        # Step 1: Generate assembly combinations
-        assemblies = generate_assembly_combinations(chains)
+        chains_as_dicts = [asdict(c) for c in config.chains]
+
+        assemblies = generate_assembly_combinations(chains_as_dicts)
         if not assemblies:
             raise ValueError("No valid antibody assemblies could be generated. Check chain definitions.")
 
-        # Step 2: Calculate masses for all assemblies
-        assemblies_with_mass = calculate_assembly_masses(chains, assemblies)
+        assemblies_with_mass = calculate_assembly_masses(chains_as_dicts, assemblies)
 
-        protein_masses_str = ", ".join([str(a['mass']) for a in assemblies_with_mass])
+        ordered_assembly_names = [a['name'] for a in assemblies_with_mass]
+        intensity_scalars = [config.assembly_abundances[name] for name in ordered_assembly_names]
 
         if len(intensity_scalars) != len(assemblies_with_mass):
             raise ValueError("The number of intensity scalars does not match the number of generated assemblies.")
@@ -104,34 +85,25 @@ def execute_antibody_simulation(
             if num_assemblies > 15:
                 update_queue.put(('log', f"  ... and {num_assemblies - 15} more species.\n"))
 
-        # Step 3: Call the core simulation engine
+        protein_masses = [a['mass'] for a in assemblies_with_mass]
+
+        sim_config = SpectrumGeneratorConfig(
+            common=config.common,
+            lc=config.lc,
+            protein_list_file=None,
+            protein_masses=protein_masses,
+            intensity_scalars=intensity_scalars,
+            mass_inhomogeneity=0.0
+        )
 
         result = execute_simulation_and_write_mzml(
-
-            protein_masses_str=protein_masses_str,
-            intensity_scalars=intensity_scalars,
+            config=sim_config,
             final_filepath=final_filepath,
             update_queue=update_queue,
-            mz_step_str=mz_step_str,
-            peak_sigma_mz_str=peak_sigma_mz_str,
-            mz_range_start_str=mz_range_start_str,
-            mz_range_end_str=mz_range_end_str,
-            noise_option=noise_option,
-            seed=seed,
-            lc_simulation_enabled=lc_simulation_enabled,
-            num_scans=num_scans,
-            scan_interval=scan_interval,
-            gaussian_std_dev=gaussian_std_dev,
-            lc_tailing_factor=lc_tailing_factor,
-            isotopic_enabled=isotopic_enabled,
-            resolution=resolution,
-            mass_inhomogeneity=mass_inhomogeneity,
-            pink_noise_enabled=pink_noise_enabled,
             return_data_only=return_data_only
         )
 
         return result
-
 
     except (ValueError, Exception) as e:
         if update_queue:
@@ -142,56 +114,32 @@ def execute_antibody_simulation(
 def generate_assembly_combinations(chains: list[dict]) -> list[dict]:
     """
     Generates all plausible antibody assemblies from a list of input chains.
-
-    This function creates combinations for the most common species observed in
-    antibody production, including free chains, half-antibodies, heavy-chain
-    dimers, HHL impurities, and full H2L2 antibodies (including bispecifics).
-
-    Args:
-        chains: A list of dictionaries, where each dictionary represents a chain
-                and has 'type' ('HC' or 'LC') and 'name' (e.g., 'H1') keys.
-
-    Returns:
-        A list of dictionaries, where each dictionary represents a unique
-        assembly and has 'name' (e.g., 'H1H1L1L1') and 'components'
-        (a list of chain names) keys.
     """
     hcs = [c['name'] for c in chains if c['type'] == 'HC']
     lcs = [c['name'] for c in chains if c['type'] == 'LC']
 
     if not hcs or not lcs:
-        # Not a valid antibody if there's no heavy or light chain
         return []
 
     assemblies = set()
 
-    # Use sorted tuples to represent assemblies, as this preserves duplicates
-    # while still being hashable for storage in a set.
-
-    # 1. Monomers (Free Chains)
     for hc in hcs:
         assemblies.add(tuple(sorted([hc])))
     for lc in lcs:
         assemblies.add(tuple(sorted([lc])))
 
-    # 2. Dimers (Half-Antibodies and Heavy-Chain Dimers)
-    # HL (Half-Antibody)
     for hc in hcs:
         for lc in lcs:
             assemblies.add(tuple(sorted([hc, lc])))
-    # HH (Heavy-Chain Dimer)
     for h_pair in combinations_with_replacement(hcs, 2):
         assemblies.add(tuple(sorted(h_pair)))
 
-    # 3. Trimers (HHL impurities)
     hh_dimers = list(combinations_with_replacement(hcs, 2))
     for hh in hh_dimers:
         for lc in lcs:
             assemblies.add(tuple(sorted(hh + (lc,))))
 
-    # 4. Tetramers (Full Antibodies, H2L2) and LC-LC Dimers
     ll_pairs = list(combinations_with_replacement(lcs, 2))
-    # Add LC-LC dimers to the assemblies
     for ll in ll_pairs:
         assemblies.add(tuple(sorted(ll)))
 
@@ -199,7 +147,6 @@ def generate_assembly_combinations(chains: list[dict]) -> list[dict]:
         for ll in ll_pairs:
             assemblies.add(tuple(sorted(hh + ll)))
 
-    # Format the output
     result = []
     for assembly_tuple in sorted(list(assemblies), key=len):
         components = list(assembly_tuple)

@@ -102,3 +102,31 @@ def parse_range_entry(entry_value: str, name: str) -> tuple[float, float]:
         return start, end
     except (ValueError, IndexError):
         raise ValueError(f"Invalid range for {name}. Use 'start-end' format (e.g., '10-50').")
+
+
+def show_plot(mz_range, intensity_data: dict, title: str, xlabel="m/z", ylabel="Intensity"):
+    """
+    Displays a matplotlib plot of the spectrum.
+    """
+    import matplotlib.pyplot as plt
+    from tkinter import messagebox
+
+    try:
+        plt.style.use('seaborn-v0_8-darkgrid')
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        for label, data in intensity_data.items():
+            ax.plot(mz_range, data, label=label, lw=1.5)
+
+        ax.set_title(title, fontsize=14)
+        ax.set_xlabel(xlabel, fontsize=12)
+        ax.set_ylabel(ylabel, fontsize=12)
+
+        if len(intensity_data) > 1:
+            ax.legend()
+
+        ax.grid(True)
+        fig.tight_layout()
+        plt.show()
+    except Exception as e:
+        messagebox.showerror("Plotting Error", f"Failed to show plot. Ensure matplotlib is installed correctly.\nError: {e}")

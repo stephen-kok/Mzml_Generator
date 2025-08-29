@@ -1,12 +1,5 @@
 import unittest
-import sys
-import os
-
-# Add the src directory to the Python path to allow for absolute imports
-# This allows the test runner to find the `spec_generator` module
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from src.spec_generator.core.isotopes import IsotopeCalculator
+from spec_generator.core.isotopes import IsotopeCalculator
 
 class TestIsotopeCalculator(unittest.TestCase):
 

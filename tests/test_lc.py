@@ -1,13 +1,8 @@
 import unittest
-import sys
-import os
 import numpy as np
 
-# Add the src directory to the Python path to allow for absolute imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 # The function to test is private, so we need to import it with a leading underscore
-from src.spec_generator.core.lc import _get_lc_peak_shape
+from spec_generator.core.lc import _get_lc_peak_shape
 
 class TestLCPeakShape(unittest.TestCase):
 
