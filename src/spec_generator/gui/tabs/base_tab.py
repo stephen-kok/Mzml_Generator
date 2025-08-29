@@ -28,7 +28,7 @@ class BaseTab(ttk.Frame):
         """
         raise NotImplementedError
 
-    def _gather_common_params(self, params_dict, lc_params_dict):
+    def _gather_common_params(self, params_dict, lc_params_dict=None):
         seed_str = params_dict['seed_var'].get().strip()
         if seed_str:
             seed = int(seed_str)
@@ -50,14 +50,16 @@ class BaseTab(ttk.Frame):
             filename_template=params_dict['filename_template_var'].get(),
         )
 
-        lc_enabled = lc_params_dict['enabled_var'].get()
-        lc = LCParams(
-            enabled=lc_enabled,
-            num_scans=int(lc_params_dict['num_scans_entry'].get()) if lc_enabled else 1,
-            scan_interval=float(lc_params_dict['scan_interval_entry'].get()) if lc_enabled else 0.0,
-            gaussian_std_dev=float(lc_params_dict['gaussian_std_dev_entry'].get()) if lc_enabled else 0.0,
-            lc_tailing_factor=float(lc_params_dict['lc_tailing_factor_entry'].get()) if lc_enabled else 0.0,
-        )
+        lc = None
+        if lc_params_dict:
+            lc_enabled = lc_params_dict['enabled_var'].get()
+            lc = LCParams(
+                enabled=lc_enabled,
+                num_scans=int(lc_params_dict['num_scans_entry'].get()) if lc_enabled else 1,
+                scan_interval=float(lc_params_dict['scan_interval_entry'].get()) if lc_enabled else 0.0,
+                gaussian_std_dev=float(lc_params_dict['gaussian_std_dev_entry'].get()) if lc_enabled else 0.0,
+                lc_tailing_factor=float(lc_params_dict['lc_tailing_factor_entry'].get()) if lc_enabled else 0.0,
+            )
         return common, lc
 
     def get_log_widgets(self):
