@@ -185,7 +185,6 @@ class AntibodyTab(BaseTab):
 
             assemblies = generate_assembly_combinations(chains_as_dicts)
             assemblies_with_mass = calculate_assembly_masses(chains_as_dicts, assemblies)
-
             # Sort by mass in ascending order
             assemblies_with_mass.sort(key=lambda x: x['mass'])
 
