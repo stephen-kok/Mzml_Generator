@@ -1,6 +1,6 @@
 import tkinter as tk
 import multiprocessing
-from src.spec_generator.gui.main_app import CombinedSpectrumSequenceApp
+from .gui.main_app import CombinedSpectrumSequenceApp
 
 def main():
     """
