@@ -5,6 +5,8 @@ import numba
 from .constants import (BASE_INTENSITY_SCALAR, FWHM_TO_SIGMA, MZ_SCALE_FACTOR,
                         PROTON_MASS)
 from .isotopes import isotope_calculator
+from .peptide_isotopes import peptide_isotope_calculator
+from pyteomics import mass
 
 
 @numba.jit(nopython=True, fastmath=True)
@@ -128,6 +130,51 @@ def generate_protein_spectrum(
     # Call the optimized Numba function to build the final spectrum
     return _build_spectrum_from_peaks_numba(
         mz_range, all_peak_mzs, all_peak_intensities, all_peak_sigmas
+    )
+
+
+def generate_peptide_spectrum(
+    peptide_sequence: str,
+    mz_range: np.ndarray,
+    peak_sigma_mz_float: float,
+    intensity_scalar: float,
+    resolution: float,
+    charge: int,
+) -> np.ndarray:
+    """
+    Generates a single, clean spectrum for a peptide at a specific charge state.
+    """
+    # This now returns a list of (m/z, relative_intensity) tuples
+    isotopic_distribution = peptide_isotope_calculator.get_distribution(
+        peptide_sequence, charge=charge
+    )
+
+    if not isotopic_distribution:
+        return np.zeros_like(mz_range)
+
+    # Extract m/z values and their base relative intensities
+    peak_mzs = np.array([p[0] for p in isotopic_distribution])
+    peak_rel_intensities = np.array([p[1] for p in isotopic_distribution])
+
+    # Filter for peaks within the visible m/z range
+    visible_mask = (peak_mzs >= mz_range[0]) & (peak_mzs <= mz_range[-1])
+    if not np.any(visible_mask):
+        return np.zeros_like(mz_range)
+
+    visible_mzs = peak_mzs[visible_mask]
+    visible_intensities = intensity_scalar * peak_rel_intensities[visible_mask]
+
+    # Calculate sigma for each peak based on its m/z
+    sigma_intrinsic = peak_sigma_mz_float * (visible_mzs / MZ_SCALE_FACTOR)
+    if resolution > 0:
+        sigma_resolution = (visible_mzs / resolution) / FWHM_TO_SIGMA
+        visible_sigmas = np.sqrt(sigma_intrinsic**2 + sigma_resolution**2)
+    else:
+        visible_sigmas = sigma_intrinsic
+
+    # Call the optimized Numba function to build the final spectrum
+    return _build_spectrum_from_peaks_numba(
+        mz_range, visible_mzs, visible_intensities, visible_sigmas
     )
 
 

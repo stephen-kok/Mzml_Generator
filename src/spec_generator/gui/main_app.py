@@ -8,6 +8,7 @@ from .tabs.docs_tab import DocsTab
 from .tabs.spectrum_tab import SpectrumTab
 from .tabs.binding_tab import BindingTab
 from .tabs.antibody_tab import AntibodyTab
+from .tabs.peptide_map_tab import PeptideMapTab
 
 class CombinedSpectrumSequenceApp:
     def __init__(self, master: tk.Tk):
@@ -29,6 +30,7 @@ class CombinedSpectrumSequenceApp:
         self.add_tab(SpectrumTab, "Spectrum Generator")
         self.add_tab(BindingTab, "Covalent Binding")
         self.add_tab(AntibodyTab, "Antibody Simulation")
+        self.add_tab(PeptideMapTab, "Peptide Map")
 
         self.process_queue()
         master.minsize(650, 600)
@@ -80,6 +82,9 @@ class CombinedSpectrumSequenceApp:
                         active_tab.on_task_done()
                     if msg_data:
                         messagebox.showinfo("Complete", msg_data)
+                elif msg_type == 'preview_done':
+                    if active_tab and hasattr(active_tab, 'on_preview_done'):
+                        active_tab.on_preview_done()
         except queue.Empty:
             pass
         finally:
