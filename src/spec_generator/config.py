@@ -63,6 +63,8 @@ class Chain:
     type: str
     name: str
     seq: str
+    pyro_glu: bool
+    k_loss: bool
 
 @dataclass
 class AntibodySimConfig:

@@ -3,7 +3,7 @@ import threading
 from dataclasses import asdict
 from datetime import datetime
 from tkinter import (HORIZONTAL, LEFT, NORMAL, DISABLED, NSEW, SUNKEN, WORD,
-                     StringVar, messagebox, Text, E)
+                     StringVar, messagebox, Text, E, BooleanVar)
 
 from ttkbootstrap import widgets as ttk
 from ttkbootstrap.constants import PRIMARY
@@ -39,8 +39,10 @@ class AntibodyTab(BaseTab):
         add_lc_button = ttk.Button(button_frame, text="Add Light Chain", command=lambda: self.add_chain_row("LC"), style='Outline.TButton')
         add_lc_button.pack(side=LEFT, padx=5)
 
-        self.add_chain_row("HC", "PEPTIDE")
-        self.add_chain_row("LC", "SEQUENCE")
+        nistmab_hc = "QVTLRESGPALVKPTQTLTLTCTFSGFSLSTAGMSVGWIRQPPGKALEWLADIWWDDKKHYNPSLKDRLTISKDTSKNQVVLKVTNMDPADTATYYCARDMIFNFYFDVWGQGTTVTVSSASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKRVEPKSCDKTHTCPPCPAPELLGGPSVFLFPPKPKDTLMISRTPEVTCVVVDVSHEDPEVKFNWYVDGVEVHNAKTKPREEQYNSTYRVVSVLTVLHQDWLNGKEYKCKVSNKALPAPIEKTISKAKGQPREPQVYTLPPSREEMTKNQVSLTCLVKGFYPSDIAVEWESNGQPENNYKTTPPVLDSDGSFFLYSKLTVDKSRWQQGNVFSCSVMHEALHNHYTQKSLSLSPGK"
+        nistmab_lc = "DIQMTQSPSTLSASVGDRVTITCSASSRVGYMHWYQQKPGKAPKLLIYDTSKLASGVPSRFSGSGSGTEFTLTISSLQPDDFATYYCFQGSGYPFTFGGGTKVEIKRTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC"
+        self.add_chain_row("HC", nistmab_hc)
+        self.add_chain_row("LC", nistmab_lc)
 
         # --- Assemblies Frame ---
         assemblies_frame = ttk.LabelFrame(self.content_frame, text="2. Generated Assemblies & Abundance", padding=(15, 10))
@@ -101,16 +103,32 @@ class AntibodyTab(BaseTab):
         log_scroll.grid(row=1, column=1, sticky="ns")
         self.output_text['yscrollcommand'] = log_scroll.set
 
-    def _gather_config(self) -> AntibodySimConfig:
-        common, lc = self._gather_common_params(self.antibody_params, self.antibody_lc_params)
-
+    def _gather_chains(self) -> list[Chain]:
         chains = []
         for entry in self.chain_entries:
             seq = entry['seq_var'].get().strip().upper()
             name = entry['name_var'].get().strip()
             if not seq or not name:
                 raise ValueError("All chain sequences and names must be provided.")
-            chains.append(Chain(type=entry['type'], name=name, seq=seq))
+
+            pyro_glu = entry.get('pyro_glu_var') and entry['pyro_glu_var'].get()
+            k_loss = entry.get('k_loss_var') and entry['k_loss_var'].get()
+
+            modified_name = name
+            if pyro_glu:
+                modified_name += "[pyro-E]"
+            if k_loss:
+                modified_name += "[-K]"
+
+            chains.append(Chain(
+                type=entry['type'], name=modified_name, seq=seq,
+                pyro_glu=pyro_glu, k_loss=k_loss
+            ))
+        return chains
+
+    def _gather_config(self) -> AntibodySimConfig:
+        common, lc = self._gather_common_params(self.antibody_params, self.antibody_lc_params)
+        chains = self._gather_chains()
 
         if not self.assembly_abundances:
             raise ValueError("Please generate the assemblies first.")
@@ -150,13 +168,29 @@ class AntibodyTab(BaseTab):
         chain_name_entry = ttk.Entry(self.chain_inner_frame, textvariable=name_var, width=10)
         chain_name_entry.grid(row=row, column=2, sticky="w", pady=2, padx=5)
 
-        remove_button = ttk.Button(self.chain_inner_frame, text="X", command=remove_chain_row, width=2, bootstyle="danger-outline")
-        remove_button.grid(row=row, column=3, sticky="w", pady=2, padx=5)
+        widgets = [chain_label, chain_seq_entry, chain_name_entry]
+        entry_data = {'id': id(seq_var), 'type': chain_type, 'seq_var': seq_var, 'name_var': name_var}
 
-        entry_data = {
-            'id': id(seq_var), 'type': chain_type, 'seq_var': seq_var, 'name_var': name_var,
-            'widgets': [chain_label, chain_seq_entry, chain_name_entry, remove_button]
-        }
+        if chain_type == "HC":
+            pyro_glu_var = BooleanVar(value=False)
+            pyro_glu_check = ttk.Checkbutton(self.chain_inner_frame, text="pyro-E", variable=pyro_glu_var, bootstyle="round-toggle")
+            pyro_glu_check.grid(row=row, column=3, sticky="w", pady=2, padx=5)
+            Tooltip(pyro_glu_check, "N-terminal pyro-glutamate formation from Q or E.")
+            widgets.append(pyro_glu_check)
+            entry_data['pyro_glu_var'] = pyro_glu_var
+
+            k_loss_var = BooleanVar(value=False)
+            k_loss_check = ttk.Checkbutton(self.chain_inner_frame, text="-K", variable=k_loss_var, bootstyle="round-toggle")
+            k_loss_check.grid(row=row, column=4, sticky="w", pady=2, padx=5)
+            Tooltip(k_loss_check, "C-terminal lysine (K) cleavage.")
+            widgets.append(k_loss_check)
+            entry_data['k_loss_var'] = k_loss_var
+
+        remove_button = ttk.Button(self.chain_inner_frame, text="X", command=remove_chain_row, width=2, bootstyle="danger-outline")
+        remove_button.grid(row=row, column=5, sticky="w", pady=2, padx=5)
+        widgets.append(remove_button)
+
+        entry_data['widgets'] = widgets
         self.chain_entries.append(entry_data)
         self.chain_inner_frame.columnconfigure(1, weight=1)
 
@@ -169,13 +203,7 @@ class AntibodyTab(BaseTab):
                 self.assemblies_tree.delete(item)
             self.assembly_abundances.clear()
 
-            chains = []
-            for entry in self.chain_entries:
-                seq = entry['seq_var'].get().strip().upper()
-                name = entry['name_var'].get().strip()
-                if not seq or not name:
-                    raise ValueError("All chain sequences and names must be provided.")
-                chains.append(Chain(type=entry['type'], name=name, seq=seq))
+            chains = self._gather_chains()
 
             if not chains:
                 raise ValueError("No chains defined.")
