@@ -75,13 +75,15 @@ def execute_simulation_and_write_mzml(
                 total_spectrum = np.zeros_like(mz_range, dtype=float)
                 for sub_mass in mass_distribution:
                     spectrum = generate_protein_spectrum(
-                        sub_mass, mz_range, common, config.intensity_scalars[i]
+                        sub_mass, mz_range, common.mz_step, common.peak_sigma_mz,
+                        config.intensity_scalars[i], common.isotopic_enabled, common.resolution
                     )
                     total_spectrum += spectrum
                 clean_spectrum = total_spectrum / num_samples
             else:
                 clean_spectrum = generate_protein_spectrum(
-                    protein_mass, mz_range, common, config.intensity_scalars[i]
+                    protein_mass, mz_range, common.mz_step, common.peak_sigma_mz,
+                    config.intensity_scalars[i], common.isotopic_enabled, common.resolution
                 )
 
             all_clean_spectra.append(clean_spectrum)

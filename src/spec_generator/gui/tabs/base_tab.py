@@ -40,8 +40,6 @@ class BaseTab(ttk.Frame):
             isotopic_enabled=params_dict['isotopic_enabled_var'].get(),
             resolution=float(params_dict['resolution_entry'].get()) * 1000,
             peak_sigma_mz=float(params_dict['peak_sigma_mz_entry'].get()),
-            mass_dependent_peak_width=params_dict['mass_dependent_peak_width_var'].get(),
-            peak_width_scaling_factor=float(params_dict['peak_width_scaling_factor_entry'].get()),
             mz_step=float(params_dict['mz_step_entry'].get()),
             mz_range_start=float(params_dict['mz_range_start_entry'].get()),
             mz_range_end=float(params_dict['mz_range_end_entry'].get()),

@@ -42,33 +42,22 @@ def create_common_parameters_frame(parent, mz_start, mz_end, noise):
     params['peak_sigma_mz_entry'].grid(row=2, column=1, sticky=W, pady=2, padx=5)
     Tooltip(params['peak_sigma_mz_entry'], "The 'natural' peak width (standard deviation) from effects like Doppler broadening,\nindependent of instrument resolution. A small value is recommended.")
 
-    params['mass_dependent_peak_width_var'] = BooleanVar(value=False)
-    params['mass_dependent_peak_width_check'] = ttk.Checkbutton(mz_frame, text="Enable Mass-Dependent Peak Width", variable=params['mass_dependent_peak_width_var'], bootstyle="primary-round-toggle")
-    params['mass_dependent_peak_width_check'].grid(row=3, column=0, columnspan=2, sticky=W, pady=5)
-    Tooltip(params['mass_dependent_peak_width_check'], "If enabled, peak width will increase with species mass.")
-
-    ttk.Label(mz_frame, text="Peak Width Scaling Factor:").grid(row=4, column=0, sticky=W, pady=2)
-    params['peak_width_scaling_factor_entry'] = ttk.Entry(mz_frame, width=10)
-    params['peak_width_scaling_factor_entry'].insert(0, "0.0")
-    params['peak_width_scaling_factor_entry'].grid(row=4, column=1, sticky=W, pady=2, padx=5)
-    Tooltip(params['peak_width_scaling_factor_entry'], "The scaling factor to apply to the peak width based on mass.\nFinal Sigma = Base Sigma + (Mass * Scaling Factor)")
-
-    ttk.Label(mz_frame, text="m/z Step:").grid(row=5, column=0, sticky=W, pady=2)
+    ttk.Label(mz_frame, text="m/z Step:").grid(row=3, column=0, sticky=W, pady=2)
     params['mz_step_entry'] = ttk.Entry(mz_frame, width=10)
     params['mz_step_entry'].insert(0, "0.02")
-    params['mz_step_entry'].grid(row=5, column=1, sticky=W, pady=2, padx=5)
+    params['mz_step_entry'].grid(row=3, column=1, sticky=W, pady=2, padx=5)
     Tooltip(params['mz_step_entry'], "The distance between data points in the m/z axis.")
 
-    ttk.Label(mz_frame, text="m/z Range Start:").grid(row=6, column=0, sticky=W, pady=2)
+    ttk.Label(mz_frame, text="m/z Range Start:").grid(row=4, column=0, sticky=W, pady=2)
     params['mz_range_start_entry'] = ttk.Entry(mz_frame, width=10)
     params['mz_range_start_entry'].insert(0, mz_start)
-    params['mz_range_start_entry'].grid(row=6, column=1, sticky=W, pady=2, padx=5)
+    params['mz_range_start_entry'].grid(row=4, column=1, sticky=W, pady=2, padx=5)
     Tooltip(params['mz_range_start_entry'], "The minimum m/z value for the spectrum.")
 
-    ttk.Label(mz_frame, text="m/z Range End:").grid(row=7, column=0, sticky=W, pady=2)
+    ttk.Label(mz_frame, text="m/z Range End:").grid(row=5, column=0, sticky=W, pady=2)
     params['mz_range_end_entry'] = ttk.Entry(mz_frame, width=10)
     params['mz_range_end_entry'].insert(0, mz_end)
-    params['mz_range_end_entry'].grid(row=7, column=1, sticky=W, pady=2, padx=5)
+    params['mz_range_end_entry'].grid(row=5, column=1, sticky=W, pady=2, padx=5)
     Tooltip(params['mz_range_end_entry'], "The maximum m/z value for the spectrum.")
 
     # --- Noise & Output Frame ---

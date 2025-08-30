@@ -9,8 +9,6 @@ class CommonParams:
     isotopic_enabled: bool
     resolution: float
     peak_sigma_mz: float
-    mass_dependent_peak_width: bool
-    peak_width_scaling_factor: float
     mz_step: float
     mz_range_start: float
     mz_range_end: float

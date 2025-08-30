@@ -25,8 +25,6 @@ class TestPeptideMapSimulation(unittest.TestCase):
             isotopic_enabled=True,
             resolution=120000,
             peak_sigma_mz=0.0,
-            mass_dependent_peak_width=False,
-            peak_width_scaling_factor=0.0,
             mz_step=0.01,
             mz_range_start=200.0,
             mz_range_end=2000.0,
@@ -76,7 +74,6 @@ class TestPeptideMapSimulation(unittest.TestCase):
         """
         common_params = CommonParams(
             isotopic_enabled=True, resolution=120000, peak_sigma_mz=0.0,
-            mass_dependent_peak_width=False, peak_width_scaling_factor=0.0,
             mz_step=0.1, mz_range_start=200.0, mz_range_end=2000.0,
             noise_option="No Noise", pink_noise_enabled=False,
             output_directory=self.test_dir, seed=123, filename_template=""
