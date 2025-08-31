@@ -22,19 +22,19 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
 ]
 dependencies = [
-    "ttkbootstrap",
-    "numpy",
-    "scipy",
-    "numba",
-    "lxml",
-    "matplotlib",
-    "pandas",
-    "pyteomics",
+    "ttkbootstrap==1.14.2",
+    "numpy==1.26.4",
+    "scipy==1.12.0",
+    "numba==0.61.2",
+    "lxml==6.0.1",
+    "matplotlib==3.10.6",
+    "pandas==2.3.2",
+    "pyteomics==4.7.5",
 ]
 
 [project.optional-dependencies]
 test = [
-    "pytest",
+    "pytest==8.4.1",
 ]
 
 [project.scripts]

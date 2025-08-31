@@ -8,44 +8,77 @@ import numpy as np
 
 from ..config import SpectrumGeneratorConfig
 from ..utils.file_io import read_protein_list_file, format_filename
-from ..logic.simulation import execute_simulation_and_write_mzml
+from ..logic.simulation import execute_simulation_and_write_mzml, run_simulation_for_preview
 from ..workers.tasks import run_simulation_task
 from ..core.spectrum import generate_protein_spectrum
 from ..core.lc import apply_lc_profile_and_noise
 from ..core.constants import BASE_INTENSITY_SCALAR
-from ..utils.ui_helpers import show_plot
+from ..utils.ui_helpers import show_plot, parse_float_entry
 
 
 class SpectrumTabLogic:
     def __init__(self, app_queue):
         self.app_queue = app_queue
 
-    def generate_spectrum(self, config: SpectrumGeneratorConfig):
-        use_file_input = config.protein_list_file
-        worker = self._worker_generate_from_protein_file if use_file_input else self._worker_generate_from_manual_input
-        threading.Thread(target=worker, args=(config,), daemon=True).start()
+    def validate_and_prepare_config(self, config_dict: dict) -> SpectrumGeneratorConfig:
+        mass_str = config_dict["protein_masses_str"]
+        mass_list = [float(m.strip()) for m in mass_str.split(',') if m.strip()]
+        scalar_str = config_dict["intensity_scalars_str"]
+        scalar_list = [float(s.strip()) for s in scalar_str.split(',') if s.strip()]
 
-    def start_plot_generation(self, config: SpectrumGeneratorConfig, callback):
-        """
-        Starts a single simulation in a separate process and calls the callback
-        with the data when complete.
-        """
+        if not scalar_list and mass_list:
+            scalar_list = [1.0] * len(mass_list)
+        if len(scalar_list) != len(mass_list) and mass_list:
+            self.app_queue.put(('warning', "Mismatched scalars and masses. Adjusting..."))
+            scalar_list = (scalar_list + [1.0] * len(mass_list))[:len(mass_list)]
+
+        return SpectrumGeneratorConfig(
+            common=config_dict["common"],
+            lc=config_dict["lc"],
+            protein_list_file=config_dict["protein_list_file"],
+            protein_masses=mass_list,
+            intensity_scalars=scalar_list,
+            mass_inhomogeneity=parse_float_entry(config_dict["mass_inhomogeneity_str"], "Mass Inhomogeneity")
+        )
+
+    def validate_and_prepare_template_data(self, mass_str: str, scalar_str: str):
+        masses = [m.strip() for m in mass_str.split(',') if m.strip()]
+        scalars = [s.strip() for s in scalar_str.split(',') if s.strip()]
+
+        if not masses:
+            raise ValueError("No protein masses entered to save.")
+
+        if len(masses) != len(scalars):
+            # In the logic layer, we don't ask for user confirmation.
+            # We make a decision or raise an error. Here, we'll pad with 1.0.
+            self.app_queue.put(('warning', "Mismatched scalars and masses. Padding with 1.0."))
+            scalars = (scalars + ['1.0'] * len(masses))[:len(masses)]
+
+        return masses, scalars
+
+    def generate_spectrum(self, config_dict: dict):
         try:
+            config = self.validate_and_prepare_config(config_dict)
+            use_file_input = config.protein_list_file
+            worker = self._worker_generate_from_protein_file if use_file_input else self._worker_generate_from_manual_input
+            threading.Thread(target=worker, args=(config,), daemon=True).start()
+        except ValueError as e:
+            self.app_queue.put(('error', str(e)))
+            self.app_queue.put(('done', None))
+
+    def start_plot_generation(self, config_dict: dict, callback):
+        try:
+            config = self.validate_and_prepare_config(config_dict)
             if not config.protein_masses:
                 raise ValueError("No protein masses entered for plotting.")
 
-            # Use a pool to run in a separate process, ensuring it's cleaned up
             pool = multiprocessing.Pool(processes=1)
             pool.apply_async(run_simulation_task, args=(config, True), callback=callback)
-            pool.close() # No more tasks will be submitted
-            # We don't call pool.join() here to avoid blocking the GUI thread
+            pool.close()
 
         except Exception as e:
-            self.app_queue.put(('error', f"A multiprocessing error occurred: {e}"))
-            # If the process couldn't even start, we need to manually call the callback
-            # with a failure indicator if the callback is designed to handle it,
-            # or just re-enable the button via a queue message.
-            callback(None) # Pass None to indicate failure
+            self.app_queue.put(('error', f"A processing error occurred: {e}"))
+            callback(None)
 
     def _worker_generate_from_protein_file(self, config: SpectrumGeneratorConfig):
         try:
@@ -106,33 +139,22 @@ class SpectrumTabLogic:
         else:
             self.app_queue.put(('done', None))
 
-    def preview_spectrum(self, config: SpectrumGeneratorConfig):
+    def preview_spectrum(self, config_dict: dict):
         try:
+            config = self.validate_and_prepare_config(config_dict)
             if not config.protein_masses:
                 raise ValueError("Please enter at least one protein mass.")
 
-            protein_avg_mass = config.protein_masses[0]
-            mz_range = np.arange(config.common.mz_range_start, config.common.mz_range_end + config.common.mz_step, config.common.mz_step)
-
-            clean_spec = generate_protein_spectrum(
-                protein_avg_mass, mz_range, config.common.mz_step, config.common.peak_sigma_mz,
-                BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution
-            )
-
-            apex_scan_index = (config.lc.num_scans - 1) // 2
-            apex_scan_spectrum = apply_lc_profile_and_noise(
-                mz_range, [clean_spec], config.lc.num_scans, config.lc.gaussian_std_dev,
-                config.lc.lc_tailing_factor, config.common.seed, config.common.noise_option, config.common.pink_noise_enabled
-            )[0][apex_scan_index]
-
-            title = f"Preview (Avg Mass: {protein_avg_mass:.0f} Da, Res: {config.common.resolution/1000}k)"
-            show_plot(mz_range, {"Apex Scan Preview": apex_scan_spectrum}, title)
-            self.app_queue.put(('preview_done', None))
+            simulation_result = run_simulation_for_preview(config)
+            if simulation_result:
+                mz_range, preview_spectrum = simulation_result
+                protein_avg_mass = config.protein_masses[0]
+                title = f"Preview (Avg Mass: {protein_avg_mass:.0f} Da, Res: {config.common.resolution/1000}k)"
+                show_plot(mz_range, {"Apex Scan Preview": preview_spectrum}, title)
 
         except (ValueError, IndexError) as e:
             self.app_queue.put(('error', f"Invalid parameters for preview: {e}"))
         except Exception as e:
             self.app_queue.put(('error', f"An unexpected error occurred during preview: {e}"))
         finally:
-            # Ensure the preview button is re-enabled even if plotting fails
             self.app_queue.put(('preview_done', None))
