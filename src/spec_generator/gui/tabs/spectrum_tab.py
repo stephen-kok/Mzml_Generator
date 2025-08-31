@@ -20,7 +20,14 @@ class SpectrumTab(BaseTab):
         self.logic = SpectrumTabLogic(self.app_queue)
 
     def create_widgets(self):
-        # --- Protein Input Frame ---
+        self._create_protein_input_frame()
+        self._create_common_parameters_frame()
+        self._create_lc_simulation_frame()
+        self._create_action_buttons_frame()
+        self._create_progress_and_output_frame()
+        self._setup_bindings()
+
+    def _create_protein_input_frame(self):
         in_frame = ttk.LabelFrame(self.content_frame, text="Protein Parameters", padding=(15, 10))
         in_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         in_frame.columnconfigure(1, weight=1)
@@ -60,18 +67,18 @@ class SpectrumTab(BaseTab):
         self.mass_inhomogeneity_entry.grid(row=5, column=1, columnspan=3, sticky="ew", pady=5, padx=5)
         Tooltip(self.mass_inhomogeneity_entry, "Standard deviation of protein mass distribution to simulate conformational broadening.\nSet to 0 to disable. A small value (e.g., 1-5 Da) is recommended.")
 
-        # --- Common Parameters ---
+    def _create_common_parameters_frame(self):
         common_frame = ttk.Frame(self.content_frame)
         common_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=0)
         self.spec_gen_params = create_common_parameters_frame(common_frame, "400.0", "2500.0", "Default Noise")
         self.spec_gen_params['output_directory_var'].set(os.path.join(os.getcwd(), "Mzml Mock Spectra"))
         self.spec_gen_params['filename_template_var'].set("{date}_protein_{protein_mass}_{scans}scans_{noise}.mzML")
 
-        # --- LC Simulation ---
+    def _create_lc_simulation_frame(self):
         lc_container, self.spec_gen_lc_params = create_lc_simulation_frame(self.content_frame, False)
         lc_container.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
 
-        # --- Action Buttons ---
+    def _create_action_buttons_frame(self):
         button_frame = ttk.Frame(self.content_frame)
         button_frame.grid(row=3, column=0, pady=15)
         self.spectrum_preview_button = ttk.Button(button_frame, text="Preview Spectrum", command=self.preview_spectrum_command, style='Outline.TButton')
@@ -86,7 +93,7 @@ class SpectrumTab(BaseTab):
         self.spectrum_generate_button.pack(side=LEFT, padx=5)
         Tooltip(self.spectrum_generate_button, "Generate and save .mzML file(s) with the specified parameters.")
 
-        # --- Progress & Output ---
+    def _create_progress_and_output_frame(self):
         self.progress_bar = ttk.Progressbar(self.content_frame, orient=HORIZONTAL, mode="determinate")
         self.progress_bar.grid(row=4, column=0, pady=5, sticky="ew", padx=10)
 
@@ -101,48 +108,28 @@ class SpectrumTab(BaseTab):
         scrollbar.grid(row=0, column=1, sticky=NSEW)
         self.output_text['yscrollcommand'] = scrollbar.set
 
-        # --- Bindings ---
+    def _setup_bindings(self):
         self.protein_list_file_var.trace_add("write", self._toggle_protein_inputs)
         self._toggle_protein_inputs()
 
-    def _gather_config(self) -> SpectrumGeneratorConfig:
+    def _gather_config(self) -> dict:
         common, lc = self._gather_common_params(self.spec_gen_params, self.spec_gen_lc_params)
-
-        mass_str = self.spectrum_protein_masses_entry.get()
-        mass_list = [float(m.strip()) for m in mass_str.split(',') if m.strip()]
-        scalar_str = self.intensity_scalars_entry.get()
-        scalar_list = [float(s.strip()) for s in scalar_str.split(',') if s.strip()]
-        if not scalar_list and mass_list:
-            scalar_list = [1.0] * len(mass_list)
-        if len(scalar_list) != len(mass_list) and mass_list:
-            self.app_queue.put(('warning', "Mismatched scalars and masses. Adjusting..."))
-            scalar_list = (scalar_list + [1.0] * len(mass_list))[:len(mass_list)]
-
-        return SpectrumGeneratorConfig(
-            common=common,
-            lc=lc,
-            protein_list_file=self.protein_list_file_var.get() or None,
-            protein_masses=mass_list,
-            intensity_scalars=scalar_list,
-            mass_inhomogeneity=parse_float_entry(self.mass_inhomogeneity_entry.get(), "Mass Inhomogeneity")
-        )
+        return {
+            "common": common,
+            "lc": lc,
+            "protein_list_file": self.protein_list_file_var.get() or None,
+            "protein_masses_str": self.spectrum_protein_masses_entry.get(),
+            "intensity_scalars_str": self.intensity_scalars_entry.get(),
+            "mass_inhomogeneity_str": self.mass_inhomogeneity_entry.get(),
+        }
 
     def _save_protein_template(self):
         try:
-            mass_str = self.spectrum_protein_masses_entry.get()
-            scalar_str = self.intensity_scalars_entry.get()
-            masses = [m.strip() for m in mass_str.split(',') if m.strip()]
-            scalars = [s.strip() for s in scalar_str.split(',') if s.strip()]
-
-            if not masses:
-                messagebox.showerror("Error", "No protein masses entered to save.")
-                return
-
-            if len(masses) != len(scalars):
-                if messagebox.askokcancel("Warning", "The number of masses and intensity scalars do not match. Continue with 1.0 for missing scalars?"):
-                    scalars = (scalars + ['1.0'] * len(masses))[:len(masses)]
-                else:
-                    return
+            config_dict = self._gather_config()
+            masses, scalars = self.logic.validate_and_prepare_template_data(
+                config_dict['protein_masses_str'],
+                config_dict['intensity_scalars_str']
+            )
 
             filepath = filedialog.asksaveasfilename(
                 title="Save Protein List Template",
@@ -160,6 +147,8 @@ class SpectrumTab(BaseTab):
 
             self.app_queue.put(('log', f"Saved template to {os.path.basename(filepath)}\n"))
             self.protein_list_file_var.set(filepath)
+        except ValueError as e:
+             messagebox.showerror("Error", str(e))
         except Exception as e:
             messagebox.showerror("Save Error", f"Could not save template file.\nError: {e}")
 
@@ -178,8 +167,8 @@ class SpectrumTab(BaseTab):
         self.progress_bar["value"] = 0
         self.app_queue.put(('clear_log', None))
         try:
-            config = self._gather_config()
-            self.logic.generate_spectrum(config)
+            config_dict = self._gather_config()
+            self.logic.generate_spectrum(config_dict)
         except ValueError as e:
             self.app_queue.put(('error', f"Invalid input: {e}"))
             self.on_task_done()
@@ -187,9 +176,9 @@ class SpectrumTab(BaseTab):
     def preview_spectrum_command(self):
         self.spectrum_preview_button.config(state=DISABLED)
         try:
-            config = self._gather_config()
+            config_dict = self._gather_config()
             # Run the preview logic in a separate thread to avoid blocking the GUI
-            threading.Thread(target=self.logic.preview_spectrum, args=(config,), daemon=True).start()
+            threading.Thread(target=self.logic.preview_spectrum, args=(config_dict,), daemon=True).start()
         except ValueError as e:
             self.app_queue.put(('error', f"Invalid input for preview: {e}"))
             self.on_preview_done()
@@ -200,12 +189,12 @@ class SpectrumTab(BaseTab):
     def generate_and_plot_command(self):
         self.plot_button.config(state=DISABLED)
         try:
-            config = self._gather_config()
-            if config.protein_list_file:
+            config_dict = self._gather_config()
+            if config_dict.get("protein_list_file"):
                 messagebox.showwarning("Warning", "Plotting is only available for manually entered proteins, not for file-based batch processing.")
                 self.on_plot_done()
                 return
-            self.logic.start_plot_generation(config, self._handle_plot_result)
+            self.logic.start_plot_generation(config_dict, self._handle_plot_result)
         except ValueError as e:
             self.app_queue.put(('error', f"Invalid input: {e}"))
             self.on_plot_done()
