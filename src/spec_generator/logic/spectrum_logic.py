@@ -25,6 +25,28 @@ class SpectrumTabLogic:
         worker = self._worker_generate_from_protein_file if use_file_input else self._worker_generate_from_manual_input
         threading.Thread(target=worker, args=(config,), daemon=True).start()
 
+    def start_plot_generation(self, config: SpectrumGeneratorConfig, callback):
+        """
+        Starts a single simulation in a separate process and calls the callback
+        with the data when complete.
+        """
+        try:
+            if not config.protein_masses:
+                raise ValueError("No protein masses entered for plotting.")
+
+            # Use a pool to run in a separate process, ensuring it's cleaned up
+            pool = multiprocessing.Pool(processes=1)
+            pool.apply_async(run_simulation_task, args=(config, True), callback=callback)
+            pool.close() # No more tasks will be submitted
+            # We don't call pool.join() here to avoid blocking the GUI thread
+
+        except Exception as e:
+            self.app_queue.put(('error', f"A multiprocessing error occurred: {e}"))
+            # If the process couldn't even start, we need to manually call the callback
+            # with a failure indicator if the callback is designed to handle it,
+            # or just re-enable the button via a queue message.
+            callback(None) # Pass None to indicate failure
+
     def _worker_generate_from_protein_file(self, config: SpectrumGeneratorConfig):
         try:
             protein_list = read_protein_list_file(config.protein_list_file)

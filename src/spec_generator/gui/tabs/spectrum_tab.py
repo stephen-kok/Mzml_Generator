@@ -78,6 +78,10 @@ class SpectrumTab(BaseTab):
         self.spectrum_preview_button.pack(side=LEFT, padx=5)
         Tooltip(self.spectrum_preview_button, "Generate and display a plot of a single spectrum using the current settings.\nUses the first protein mass if multiple are entered.")
 
+        self.plot_button = ttk.Button(button_frame, text="Generate & Plot", command=self.generate_and_plot_command, style='Outline.TButton')
+        self.plot_button.pack(side=LEFT, padx=5)
+        Tooltip(self.plot_button, "Generate the spectrum and view it in the 'Plot Viewer' tab without saving a file.")
+
         self.spectrum_generate_button = ttk.Button(button_frame, text="Generate mzML File(s)", command=self.generate_spectrum_command, bootstyle=PRIMARY)
         self.spectrum_generate_button.pack(side=LEFT, padx=5)
         Tooltip(self.spectrum_generate_button, "Generate and save .mzML file(s) with the specified parameters.")
@@ -193,8 +197,31 @@ class SpectrumTab(BaseTab):
             self.app_queue.put(('error', f"An unexpected error occurred: {e}"))
             self.on_preview_done()
 
+    def generate_and_plot_command(self):
+        self.plot_button.config(state=DISABLED)
+        try:
+            config = self._gather_config()
+            if config.protein_list_file:
+                messagebox.showwarning("Warning", "Plotting is only available for manually entered proteins, not for file-based batch processing.")
+                self.on_plot_done()
+                return
+            self.logic.start_plot_generation(config, self._handle_plot_result)
+        except ValueError as e:
+            self.app_queue.put(('error', f"Invalid input: {e}"))
+            self.on_plot_done()
+
+    def _handle_plot_result(self, result):
+        if result:
+            self.app_queue.put(('plot_data', result))
+        # If result is None, it means an error occurred during process setup
+        # The error message should have already been put on the queue by the logic class
+        self.on_plot_done()
+
     def on_task_done(self):
         self.spectrum_generate_button.config(state=NORMAL)
 
     def on_preview_done(self):
         self.spectrum_preview_button.config(state=NORMAL)
+
+    def on_plot_done(self):
+        self.plot_button.config(state=NORMAL)

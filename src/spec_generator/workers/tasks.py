@@ -1,6 +1,8 @@
 from datetime import datetime
 import os
+from typing import Any
 from numpy.random import default_rng
+import numpy as np
 
 from ..logic.simulation import execute_simulation_and_write_mzml
 from ..logic.binding import execute_binding_simulation
@@ -9,17 +11,20 @@ from ..utils.file_io import format_filename
 from ..config import SpectrumGeneratorConfig, CovalentBindingConfig
 
 
-def run_simulation_task(config: SpectrumGeneratorConfig) -> tuple[bool, str]:
+def run_simulation_task(config: SpectrumGeneratorConfig, return_data_only: bool = False) -> tuple[bool, str] | tuple[np.ndarray, list[np.ndarray]]:
     """
     A top-level function that runs in a separate process for the Spectrum Generator.
     This function is designed to be called by `multiprocessing.Pool`.
 
     Args:
         config: A SpectrumGeneratorConfig object for a single protein simulation.
+        return_data_only: If True, returns the raw data instead of writing a file.
     """
     try:
-        protein_mass = config.protein_masses[0]
-        scalar = config.intensity_scalars[0]
+        # This function is currently only used by the "General" and "Antibody" tabs,
+        # which generate a single mzML file from a single config.
+        protein_mass = config.protein_masses[0] if config.protein_masses else 0
+        scalar = config.intensity_scalars[0] if config.intensity_scalars else 0
 
         _, most_abundant_offset = isotope_calculator.get_distribution(protein_mass)
         effective_protein_mass = protein_mass + most_abundant_offset
@@ -32,14 +37,17 @@ def run_simulation_task(config: SpectrumGeneratorConfig) -> tuple[bool, str]:
             "scans": config.lc.num_scans,
             "noise": config.common.noise_option.replace(" ", ""),
             "seed": config.common.seed,
-            "num_proteins": 1
+            "num_proteins": len(config.protein_masses)
         }
         filename = format_filename(config.common.filename_template, placeholders)
         filepath = os.path.join(config.common.output_directory, filename)
 
-        success = execute_simulation_and_write_mzml(config, filepath, None)
+        result = execute_simulation_and_write_mzml(config, filepath, None, return_data_only)
 
-        if success:
+        if return_data_only:
+            return result  # type: ignore
+
+        if result:
             return (True, f"--- Successfully generated file for Protein ~{int(round(effective_protein_mass))} Da ---\n")
         else:
             return (False, f"--- FAILED to generate file for Protein {int(protein_mass)} Da ---\n")
@@ -48,16 +56,16 @@ def run_simulation_task(config: SpectrumGeneratorConfig) -> tuple[bool, str]:
         return (False, f"--- Critical error for Protein {int(config.protein_masses[0])} Da: {e} ---\n")
 
 
-def run_binding_task(args: tuple) -> tuple[bool, str]:
+def run_binding_task(args: tuple[Any, ...]) -> tuple[bool, str] | tuple[np.ndarray, list[np.ndarray]]:
     """
     A top-level function that runs in a separate process for the Covalent Binding tab.
     This function is designed to be called by `multiprocessing.Pool`.
 
     Args:
-        args: A tuple containing (compound_name, compound_mass, config).
+        args: A tuple containing (compound_name, compound_mass, config, return_data_only).
     """
     try:
-        (compound_name, compound_mass, config) = args
+        (compound_name, compound_mass, config, return_data_only) = args
         common = config.common
 
         _, most_abundant_offset = isotope_calculator.get_distribution(config.protein_avg_mass)
@@ -86,15 +94,19 @@ def run_binding_task(args: tuple) -> tuple[bool, str]:
         filename = format_filename(common.filename_template, placeholders)
         filepath = os.path.join(common.output_directory, filename)
 
-        success, final_filepath = execute_binding_simulation(
+        result, final_filepath = execute_binding_simulation(
             config=config,
             compound_mass=compound_mass,
             total_binding_percentage=total_binding,
             dar2_percentage_of_bound=dar2_of_bound,
             filepath=filepath,
+            return_data_only=return_data_only
         )
 
-        if success:
+        if return_data_only:
+            return result, final_filepath # This is a tuple (mz_range, spectra)
+
+        if result:
             message += f"  SUCCESS: Wrote to {os.path.basename(final_filepath)}\n"
             return (True, message)
         else:
