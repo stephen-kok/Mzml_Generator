@@ -1,5 +1,7 @@
 import os
 import queue
+import multiprocessing
+import itertools
 import numpy as np
 
 from ..core.lc import apply_lc_profile_and_noise
@@ -7,9 +9,36 @@ from ..core.spectrum import generate_protein_spectrum
 from ..utils.mzml import create_mzml_content_et
 from ..utils.file_io import create_unique_filename
 from ..config import SpectrumGeneratorConfig
+from collections import defaultdict
 
 
-def _run_simulation(config: SpectrumGeneratorConfig, update_queue: queue.Queue | None) -> tuple[np.ndarray, list[np.ndarray]] | None:
+def _spectrum_generation_worker(
+    protein_index: int,
+    protein_mass: float,
+    intensity_scalar: float,
+    config: SpectrumGeneratorConfig,
+    mz_range: np.ndarray,
+) -> tuple[int, np.ndarray]:
+    """
+    A simple worker that calls the main spectrum generation function and returns
+    the result along with the index of the protein it belongs to.
+    """
+    common = config.common
+    spectrum = generate_protein_spectrum(
+        protein_mass,
+        mz_range,
+        common.mz_step,
+        common.peak_sigma_mz,
+        intensity_scalar,
+        common.isotopic_enabled,
+        common.resolution,
+    )
+    return protein_index, spectrum
+
+
+def _run_simulation(
+    config: SpectrumGeneratorConfig, update_queue: queue.Queue | None
+) -> tuple[np.ndarray, list[np.ndarray]] | None:
     """
     Core simulation logic to generate spectra data.
     """
@@ -24,48 +53,85 @@ def _run_simulation(config: SpectrumGeneratorConfig, update_queue: queue.Queue |
             f"  LC Simulation: {'Enabled' if lc.enabled else 'Disabled'} ({lc.num_scans} scans)\n"
             f"  Noise: {common.noise_option}, Seed: {common.seed}\n"
         )
-        update_queue.put(('log', log_msg))
-        update_queue.put(('progress_set', 5))
+        update_queue.put(("log", log_msg))
+        update_queue.put(("progress_set", 5))
 
-    mz_range = np.arange(common.mz_range_start, common.mz_range_end + common.mz_step, common.mz_step)
-    all_clean_spectra = []
-    num_proteins = len(config.protein_masses)
-    progress_per_protein = (50 / num_proteins) if num_proteins > 0 else 0
+    mz_range = np.arange(
+        common.mz_range_start, common.mz_range_end + common.mz_step, common.mz_step
+    )
 
+    # Flatten the tasks: each call to generate_protein_spectrum becomes one task.
+    # This handles both multi-protein and mass inhomogeneity in one parallel step.
+    tasks = []
+    num_sub_tasks = []
     for i, protein_mass in enumerate(config.protein_masses):
-        if update_queue:
-            update_queue.put(('log', f"Generating base spectrum for Protein (Mass: {protein_mass})...\n"))
-
         if config.mass_inhomogeneity > 0:
             num_samples = 7
-            mass_distribution = np.random.normal(loc=protein_mass, scale=config.mass_inhomogeneity, size=num_samples)
-            total_spectrum = np.zeros_like(mz_range, dtype=float)
-            for sub_mass in mass_distribution:
-                spectrum = generate_protein_spectrum(
-                    sub_mass, mz_range, common.mz_step, common.peak_sigma_mz,
-                    config.intensity_scalars[i], common.isotopic_enabled, common.resolution
-                )
-                total_spectrum += spectrum
-            clean_spectrum = total_spectrum / num_samples
-        else:
-            clean_spectrum = generate_protein_spectrum(
-                protein_mass, mz_range, common.mz_step, common.peak_sigma_mz,
-                config.intensity_scalars[i], common.isotopic_enabled, common.resolution
+            mass_distribution = np.random.normal(
+                loc=protein_mass, scale=config.mass_inhomogeneity, size=num_samples
             )
-        all_clean_spectra.append(clean_spectrum)
-        if update_queue:
-            update_queue.put(('progress_add', progress_per_protein))
+            num_sub_tasks.append(num_samples)
+            for sub_mass in mass_distribution:
+                tasks.append(
+                    (
+                        i,
+                        sub_mass,
+                        config.intensity_scalars[i],
+                        config,
+                        mz_range,
+                    )
+                )
+        else:
+            num_sub_tasks.append(1)
+            tasks.append(
+                (
+                    i,
+                    protein_mass,
+                    config.intensity_scalars[i],
+                    config,
+                    mz_range,
+                )
+            )
+
+    if update_queue:
+        update_queue.put(
+            ("log", f"Generating {len(tasks)} total spectra in parallel...\n")
+        )
+
+    with multiprocessing.Pool() as pool:
+        results = pool.starmap(_spectrum_generation_worker, tasks)
+
+    # Group and average the results
+    grouped_spectra = defaultdict(list)
+    for protein_index, spectrum in results:
+        grouped_spectra[protein_index].append(spectrum)
+
+    all_clean_spectra = []
+    for i in range(len(config.protein_masses)):
+        spectra_for_protein = grouped_spectra[i]
+        if num_sub_tasks[i] > 1:
+            # Average the spectra for mass inhomogeneity
+            avg_spectrum = np.sum(spectra_for_protein, axis=0) / num_sub_tasks[i]
+            all_clean_spectra.append(avg_spectrum)
+        else:
+            all_clean_spectra.append(spectra_for_protein[0])
 
     if not all_clean_spectra:
         if update_queue:
-            update_queue.put(('error', "Spectrum generation failed for an unknown reason."))
+            update_queue.put(
+                ("error", "Spectrum generation failed for an unknown reason.")
+            )
         return None
 
     if update_queue:
-        update_queue.put(('progress_set', 55))
+        update_queue.put(("progress_set", 55))
 
     apex_scans = None
-    if lc.enabled and config.hydrophobicity_scores and len(config.hydrophobicity_scores) == len(all_clean_spectra):
+    if (
+        lc.enabled
+        and config.hydrophobicity_scores
+        and len(config.hydrophobicity_scores) == len(all_clean_spectra)
+    ):
         scores = np.array(config.hydrophobicity_scores)
         min_score, max_score = np.min(scores), np.max(scores)
         if max_score == min_score:
@@ -73,14 +139,22 @@ def _run_simulation(config: SpectrumGeneratorConfig, update_queue: queue.Queue |
         else:
             scan_padding = int(lc.num_scans * 0.1)
             usable_scan_range = lc.num_scans - 2 * scan_padding
-            scaled_scans = (scores - min_score) / (max_score - min_score) * usable_scan_range
+            scaled_scans = (
+                (scores - min_score) / (max_score - min_score) * usable_scan_range
+            )
             apex_scans = [int(s + scan_padding) for s in scaled_scans]
 
     combined_chromatogram = apply_lc_profile_and_noise(
-        mz_range=mz_range, all_clean_spectra=all_clean_spectra, num_scans=lc.num_scans,
-        gaussian_std_dev=lc.gaussian_std_dev, lc_tailing_factor=lc.lc_tailing_factor,
-        seed=common.seed, noise_option=common.noise_option, pink_noise_enabled=common.pink_noise_enabled,
-        apex_scans=apex_scans, update_queue=update_queue
+        mz_range=mz_range,
+        all_clean_spectra=all_clean_spectra,
+        num_scans=lc.num_scans,
+        gaussian_std_dev=lc.gaussian_std_dev,
+        lc_tailing_factor=lc.lc_tailing_factor,
+        seed=common.seed,
+        noise_option=common.noise_option,
+        pink_noise_enabled=common.pink_noise_enabled,
+        apex_scans=apex_scans,
+        update_queue=update_queue,
     )
     return mz_range, [combined_chromatogram]
 

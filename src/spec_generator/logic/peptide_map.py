@@ -4,6 +4,8 @@ This module orchestrates the full peptide map simulation process.
 import queue
 import numpy as np
 from pyteomics import mass
+import multiprocessing
+import itertools
 
 from .peptide import digest_sequence
 from .retention_time import predict_retention_times
@@ -15,6 +17,42 @@ from ..core.noise import add_noise
 from ..utils.mzml import create_mzml_content_et
 from ..config import PeptideMapSimConfig
 from ..core.constants import noise_presets
+
+
+def _generate_spectrum_for_peptide_worker(
+    peptide: str,
+    config: PeptideMapSimConfig,
+    mz_range: np.ndarray,
+    peak_sigma_mz: float,
+) -> tuple[str, np.ndarray]:
+    """
+    Generates a single peptide's spectrum. Designed to be called by a multiprocessing Pool.
+    """
+    total_spectrum = np.zeros_like(mz_range)
+    base_intensity = 1000.0  # Placeholder intensity
+
+    if config.predict_charge:
+        charge_distribution = predict_charge_states(peptide)
+        for charge, rel_intensity in charge_distribution.items():
+            spectrum_for_charge = generate_peptide_spectrum(
+                peptide_sequence=peptide,
+                mz_range=mz_range,
+                peak_sigma_mz_float=peak_sigma_mz,
+                intensity_scalar=base_intensity * rel_intensity,
+                resolution=config.common.resolution,
+                charge=charge,
+            )
+            total_spectrum += spectrum_for_charge
+    else:
+        total_spectrum = generate_peptide_spectrum(
+            peptide_sequence=peptide,
+            mz_range=mz_range,
+            peak_sigma_mz_float=peak_sigma_mz,
+            intensity_scalar=base_intensity,
+            resolution=config.common.resolution,
+            charge=config.charge_state,
+        )
+    return peptide, total_spectrum
 
 
 def execute_peptide_map_simulation(
@@ -51,43 +89,32 @@ def execute_peptide_map_simulation(
 
         # 3. Generate Base Spectra for all peptides
         if update_queue:
-            update_queue.put(('log', "Generating base spectra for all peptides...\n"))
+            update_queue.put(
+                ("log", f"Generating base spectra for {len(peptides)} peptides (in parallel)...\n")
+            )
 
-        mz_range = np.arange(config.common.mz_range_start, config.common.mz_range_end, config.common.mz_step)
-        peak_sigma_mz = config.common.mz_range_end / (config.common.resolution * 2.355)
+        mz_range = np.arange(
+            config.common.mz_range_start,
+            config.common.mz_range_end,
+            config.common.mz_step,
+        )
+        peak_sigma_mz = config.common.mz_range_end / (
+            config.common.resolution * 2.355
+        )
 
-        peptide_data = []
-        for peptide in peptides:
-            total_spectrum = np.zeros_like(mz_range)
-            base_intensity = 1000.0  # Placeholder intensity
+        tasks = zip(
+            peptides,
+            itertools.repeat(config),
+            itertools.repeat(mz_range),
+            itertools.repeat(peak_sigma_mz),
+        )
+        with multiprocessing.Pool() as pool:
+            results = pool.starmap(_generate_spectrum_for_peptide_worker, tasks)
 
-            if config.predict_charge:
-                charge_distribution = predict_charge_states(peptide)
-                for charge, rel_intensity in charge_distribution.items():
-                    spectrum_for_charge = generate_peptide_spectrum(
-                        peptide_sequence=peptide,
-                        mz_range=mz_range,
-                        peak_sigma_mz_float=peak_sigma_mz,
-                        intensity_scalar=base_intensity * rel_intensity,
-                        resolution=config.common.resolution,
-                        charge=charge
-                    )
-                    total_spectrum += spectrum_for_charge
-            else:
-                total_spectrum = generate_peptide_spectrum(
-                    peptide_sequence=peptide,
-                    mz_range=mz_range,
-                    peak_sigma_mz_float=peak_sigma_mz,
-                    intensity_scalar=base_intensity,
-                    resolution=config.common.resolution,
-                    charge=config.charge_state
-                )
-
-            peptide_data.append({
-                "sequence": peptide,
-                "rt": retention_times[peptide],
-                "spectrum": total_spectrum
-            })
+        peptide_data = [
+            {"sequence": peptide, "rt": retention_times[peptide], "spectrum": spectrum}
+            for peptide, spectrum in results
+        ]
         if update_queue:
             update_queue.put(('progress_set', 45))
 
