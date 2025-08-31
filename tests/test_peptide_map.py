@@ -140,5 +140,58 @@ class TestPeptideMapSimulation(unittest.TestCase):
                 msg=f"Expected peak for peptide '{peptide}' at m/z ~{expected_mz:.2f}, but none was found."
             )
 
+    def test_simulation_with_predicted_charges(self):
+        """
+        Test that the simulation correctly generates multiple charge states
+        when the 'predict_charge' option is enabled.
+        """
+        import numpy as np
+        from pyteomics import mass
+        from src.spec_generator.logic.charge import predict_charge_states
+
+        common_params = CommonParams(
+            isotopic_enabled=True, resolution=120000, peak_sigma_mz=0.0,
+            mz_step=0.01, mz_range_start=200.0, mz_range_end=1000.0,
+            noise_option="No Noise", pink_noise_enabled=False,
+            output_directory=self.test_dir, seed=123, filename_template=""
+        )
+        lc_params = PeptideMapLCParams(run_time=1.0, scan_interval=1.0, peak_width_seconds=30.0)
+
+        peptide_sequence = "PEPTIDEK" # One basic residue, should give charge 2 as primary
+
+        config = PeptideMapSimConfig(
+            common=common_params, lc=lc_params, sequence=peptide_sequence,
+            missed_cleavages=0, charge_state=0, predict_charge=True # charge_state is ignored
+        )
+
+        mz_range, final_scans = execute_peptide_map_simulation(
+            config=config, final_filepath="", update_queue=None, return_data_only=True
+        )
+
+        total_signal = np.sum(final_scans, axis=0)
+
+        # Get the expected charge distribution
+        expected_distribution = predict_charge_states(peptide_sequence)
+        self.assertGreater(len(expected_distribution), 1, "Expected more than one charge state to be predicted.")
+
+        # Find the intensity at the m/z for each predicted charge state
+        found_intensities = {}
+        for charge, rel_intensity in expected_distribution.items():
+            expected_mz = mass.calculate_mass(sequence=peptide_sequence, charge=charge)
+            idx = np.abs(mz_range - expected_mz).argmin()
+            # Check a small window around the peak
+            peak_intensity = np.sum(total_signal[max(0, idx-2):idx+3])
+            self.assertGreater(peak_intensity, 0, f"No peak found for charge {charge} at m/z ~{expected_mz:.2f}")
+            found_intensities[charge] = peak_intensity
+
+        # Check that the relative intensities roughly match the prediction
+        primary_charge = max(expected_distribution, key=expected_distribution.get)
+
+        for charge, intensity in found_intensities.items():
+            if charge != primary_charge:
+                # The intensity of secondary peaks should be less than the primary one
+                self.assertLess(intensity, found_intensities[primary_charge])
+
+
 if __name__ == '__main__':
     unittest.main()

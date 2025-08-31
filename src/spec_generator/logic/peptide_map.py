@@ -7,6 +7,7 @@ from pyteomics import mass
 
 from .peptide import digest_sequence
 from .retention_time import predict_retention_times
+from .charge import predict_charge_states
 from ..core.peptide_isotopes import peptide_isotope_calculator
 from ..core.spectrum import generate_peptide_spectrum
 from ..core.lc import _get_lc_peak_shape # Re-using the private LC shape function
@@ -57,19 +58,35 @@ def execute_peptide_map_simulation(
 
         peptide_data = []
         for peptide in peptides:
-            # For now, assume all peptides have the same intensity and charge
-            base_spectrum = generate_peptide_spectrum(
-                peptide_sequence=peptide,
-                mz_range=mz_range,
-                peak_sigma_mz_float=peak_sigma_mz,
-                intensity_scalar=1000.0, # Placeholder intensity
-                resolution=config.common.resolution,
-                charge=config.charge_state
-            )
+            total_spectrum = np.zeros_like(mz_range)
+            base_intensity = 1000.0  # Placeholder intensity
+
+            if config.predict_charge:
+                charge_distribution = predict_charge_states(peptide)
+                for charge, rel_intensity in charge_distribution.items():
+                    spectrum_for_charge = generate_peptide_spectrum(
+                        peptide_sequence=peptide,
+                        mz_range=mz_range,
+                        peak_sigma_mz_float=peak_sigma_mz,
+                        intensity_scalar=base_intensity * rel_intensity,
+                        resolution=config.common.resolution,
+                        charge=charge
+                    )
+                    total_spectrum += spectrum_for_charge
+            else:
+                total_spectrum = generate_peptide_spectrum(
+                    peptide_sequence=peptide,
+                    mz_range=mz_range,
+                    peak_sigma_mz_float=peak_sigma_mz,
+                    intensity_scalar=base_intensity,
+                    resolution=config.common.resolution,
+                    charge=config.charge_state
+                )
+
             peptide_data.append({
                 "sequence": peptide,
                 "rt": retention_times[peptide],
-                "spectrum": base_spectrum
+                "spectrum": total_spectrum
             })
         if update_queue:
             update_queue.put(('progress_set', 45))
