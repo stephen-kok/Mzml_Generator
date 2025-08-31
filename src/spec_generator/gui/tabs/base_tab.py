@@ -1,5 +1,5 @@
 import queue
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import random
 from ...utils.ui_helpers import ScrollableFrame
 from ...config import CommonParams, LCParams
@@ -8,10 +8,11 @@ class BaseTab(ttk.Frame):
     """
     A base class for all tabs in the notebook, providing common structure.
     """
-    def __init__(self, master, style, app_queue: queue.Queue, *args, **kwargs):
+    def __init__(self, master, style, app_controller=None, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.style = style
-        self.app_queue = app_queue
+        self.app_controller = app_controller
+        self.task_queue = queue.Queue()
         self.main_frame = ScrollableFrame(self)
         self.main_frame.pack(fill="both", expand=True)
         self.content_frame = self.main_frame.scrollable_frame
@@ -21,6 +22,7 @@ class BaseTab(ttk.Frame):
         self.progress_bar = None
 
         self.create_widgets()
+        self._process_task_queue()
 
     def create_widgets(self):
         """
@@ -62,16 +64,54 @@ class BaseTab(ttk.Frame):
             )
         return common, lc
 
-    def get_log_widgets(self):
-        """
-        Returns the output text and progress bar widgets for this tab.
-        This allows the main app to route messages to the correct tab.
-        """
-        return self.output_text, self.progress_bar
-
     def on_task_done(self):
         """
         Called when a background task for this tab is finished.
         Subclasses should implement this to re-enable buttons etc.
         """
         pass
+
+    def _process_task_queue(self):
+        """
+        Process messages from the tab-specific queue.
+        """
+        try:
+            while True:
+                msg_type, msg_data = self.task_queue.get_nowait()
+
+                if msg_type == 'log':
+                    if self.output_text:
+                        self.output_text.insert("end", msg_data)
+                        self.output_text.see("end")
+                elif msg_type == 'clear_log':
+                    if self.output_text:
+                        self.output_text.delete('1.0', "end")
+                elif msg_type == 'progress_set':
+                    if self.progress_bar:
+                        self.progress_bar["value"] = msg_data
+                elif msg_type == 'progress_add':
+                    if self.progress_bar:
+                        self.progress_bar["value"] += msg_data
+                elif msg_type == 'progress_max':
+                    if self.progress_bar:
+                        self.progress_bar["maximum"] = msg_data
+                elif msg_type == 'error':
+                    messagebox.showerror("Error", msg_data)
+                    if self.progress_bar:
+                        self.progress_bar["value"] = 0
+                elif msg_type == 'warning':
+                    messagebox.showwarning("Warning", msg_data)
+                elif msg_type == 'done':
+                    # First, call the specific tab's on_task_done
+                    self.on_task_done()
+                    # Then, show a generic message if one was provided
+                    if msg_data:
+                        messagebox.showinfo("Complete", msg_data)
+                elif msg_type == 'preview_done':
+                    if hasattr(self, 'on_preview_done'):
+                        self.on_preview_done()
+
+        except queue.Empty:
+            pass
+        finally:
+            self.after(100, self._process_task_queue)

@@ -5,10 +5,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 class PlotViewerTab(ttk.Frame):
-    def __init__(self, master, style, queue, *args, **kwargs):
+    def __init__(self, master, style, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.style = style
-        self.queue = queue
 
         # Create a figure and a set of subplots
         self.fig = Figure(figsize=(5, 4), dpi=100, facecolor=self.style.colors.bg)
@@ -291,11 +290,3 @@ class PlotViewerTab(ttk.Frame):
         self.ax.relim()
         self.ax.autoscale_view()
         self.canvas.draw_idle()
-
-
-    def get_log_widgets(self):
-        """
-        This tab does not have standard log widgets.
-        Returns None to comply with the main app's interface.
-        """
-        return None, None

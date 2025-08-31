@@ -129,7 +129,7 @@ class BindingTab(BaseTab):
     def generate_binding_spectra_command(self):
         self.binding_generate_button.config(state=DISABLED)
         self.progress_bar["value"] = 0
-        self.app_queue.put(('clear_log', None))
+        self.task_queue.put(('clear_log', None))
         threading.Thread(target=self._worker_generate_binding_spectra, daemon=True).start()
 
     def _worker_generate_binding_spectra(self):
@@ -137,8 +137,8 @@ class BindingTab(BaseTab):
             config = self._gather_config()
             compounds = read_compound_list_file(config.compound_list_file)
         except (ValueError, FileNotFoundError) as e:
-            self.app_queue.put(('error', str(e)))
-            self.app_queue.put(('done', None))
+            self.task_queue.put(('error', str(e)))
+            self.task_queue.put(('done', None))
             return
 
         jobs = []
@@ -147,7 +147,7 @@ class BindingTab(BaseTab):
             job_config.common.seed = config.common.seed + i
             jobs.append((name, mass, job_config))
 
-        self.app_queue.put(('log', f"Starting batch generation for {len(jobs)} compounds using {os.cpu_count()} processes...\n\n"))
+        self.task_queue.put(('log', f"Starting batch generation for {len(jobs)} compounds using {os.cpu_count()} processes...\n\n"))
         self.progress_bar["maximum"] = len(jobs)
         self.progress_bar["value"] = 0
 
@@ -155,14 +155,14 @@ class BindingTab(BaseTab):
             with multiprocessing.Pool(processes=os.cpu_count()) as pool:
                 success_count = 0
                 for i, (success, message) in enumerate(pool.imap_unordered(run_binding_task, jobs)):
-                    self.app_queue.put(('log', message))
+                    self.task_queue.put(('log', message))
                     if success:
                         success_count += 1
-                    self.app_queue.put(('progress_set', i + 1))
-            self.app_queue.put(('done', f"Batch complete. Generated {success_count} of {len(jobs)} binding mzML files."))
+                    self.task_queue.put(('progress_set', i + 1))
+            self.task_queue.put(('done', f"Batch complete. Generated {success_count} of {len(jobs)} binding mzML files."))
         except Exception as e:
-            self.app_queue.put(('error', f"A multiprocessing error occurred: {e}"))
-            self.app_queue.put(('done', None))
+            self.task_queue.put(('error', f"A multiprocessing error occurred: {e}"))
+            self.task_queue.put(('done', None))
 
     def _preview_binding_tab_command(self):
         try:
