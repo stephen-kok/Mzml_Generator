@@ -1,5 +1,5 @@
 import unittest
-from src.spec_generator.logic.charge import predict_charge_states
+from spec_generator.logic.charge import predict_charge_states
 
 class TestChargePrediction(unittest.TestCase):
 

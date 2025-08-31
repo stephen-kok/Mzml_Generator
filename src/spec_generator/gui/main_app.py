@@ -1,10 +1,12 @@
 import queue
 import tkinter as tk
 from tkinter import messagebox
+import numpy as np
 from ttkbootstrap import Style, widgets as ttk
 from ttkbootstrap.constants import BOTH
 
 from .tabs.docs_tab import DocsTab
+from .tabs.plot_viewer_tab import PlotViewerTab
 from .tabs.spectrum_tab import SpectrumTab
 from .tabs.binding_tab import BindingTab
 from .tabs.antibody_tab import AntibodyTab
@@ -27,6 +29,7 @@ class CombinedSpectrumSequenceApp:
 
         # Create and add tabs
         self.add_tab(DocsTab, "Overview & Docs")
+        self.add_tab(PlotViewerTab, "Plot Viewer")
         self.add_tab(SpectrumTab, "Spectrum Generator")
         self.add_tab(BindingTab, "Covalent Binding")
         self.add_tab(AntibodyTab, "Antibody Simulation")
@@ -59,7 +62,16 @@ class CombinedSpectrumSequenceApp:
             'warning': self._handle_warning,
             'done': self._handle_done,
             'preview_done': self._handle_preview_done,
+            'plot_data': self._handle_plot_data,
         }
+
+    def _handle_plot_data(self, msg_data, active_tab):
+        plot_tab = self.tabs.get("Plot Viewer")
+        if plot_tab:
+            # msg_data is the full data tuple, e.g., (mz_array, spectra_data)
+            # The plot_data method in the tab will handle unpacking and logic.
+            plot_tab.plot_data(msg_data)
+            self.notebook.select(plot_tab)
 
     def _handle_log(self, msg_data, active_tab):
         output_text, _ = active_tab.get_log_widgets()

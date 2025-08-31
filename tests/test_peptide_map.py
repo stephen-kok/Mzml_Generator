@@ -147,7 +147,7 @@ class TestPeptideMapSimulation(unittest.TestCase):
         """
         import numpy as np
         from pyteomics import mass
-        from src.spec_generator.logic.charge import predict_charge_states
+        from spec_generator.logic.charge import predict_charge_states
 
         common_params = CommonParams(
             isotopic_enabled=True, resolution=120000, peak_sigma_mz=0.0,
