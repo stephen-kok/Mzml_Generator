@@ -98,3 +98,4 @@ class PeptideMapSimConfig:
     sequence: str
     missed_cleavages: int
     charge_state: int
+    predict_charge: bool = False
