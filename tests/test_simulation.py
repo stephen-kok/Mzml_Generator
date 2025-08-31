@@ -106,5 +106,34 @@ class TestSimulation(unittest.TestCase):
         self.assertTrue(success)
         self.assertTrue(os.path.exists(filepath))
 
+    def test_charge_state_peaks_are_correct(self):
+        """
+        Test that the simulation generates peaks at the correct m/z values
+        for a few expected charge states of a 25kDa protein.
+        """
+        mz_range, spectra = execute_simulation_and_write_mzml(
+            config=self.default_config,
+            final_filepath=os.path.join(self.test_dir, "test.mzML"),
+            update_queue=None,
+            return_data_only=True
+        )
+        spectrum = spectra[0][0] # First protein, first scan
+
+        PROTON_MASS = 1.007276
+        protein_mass = self.default_config.protein_masses[0]
+
+        # Check for a few expected charge states
+        for z in [15, 16, 17]:
+            expected_mz = (protein_mass + z * PROTON_MASS) / z
+            # Find the index in the m/z range that is closest to our expected m/z
+            idx = np.abs(mz_range - expected_mz).argmin()
+
+            # We expect a peak (non-zero intensity) at this index
+            # This confirms the charge state was generated.
+            self.assertGreater(
+                spectrum[idx], 0,
+                msg=f"Expected a peak for charge state {z} at m/z ~{expected_mz:.2f}, but found none."
+            )
+
 if __name__ == '__main__':
     unittest.main()

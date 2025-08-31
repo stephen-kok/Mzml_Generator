@@ -95,7 +95,7 @@ class TestLCProfileApplication(unittest.TestCase):
         intensity_at_1800 = [scan[800] for scan in chromatogram]
         self.assertEqual(np.argmax(intensity_at_1800), apex_scans[1])
 
-        # The mock should have been called
+        # The mock RNG is called for retention time variation for each scan for each species.
         mock_rng.assert_called_once()
-        # It should have been called twice, once for each species
-        self.assertEqual(mock_generator.normal.call_count, self.num_scans * len(all_clean_spectra))
+        expected_calls = self.num_scans * len(all_clean_spectra)
+        self.assertEqual(mock_generator.normal.call_count, expected_calls)

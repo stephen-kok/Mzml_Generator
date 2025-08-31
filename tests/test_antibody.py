@@ -39,16 +39,29 @@ class TestAntibodyLogic(unittest.TestCase):
         assemblies_with_props = calculate_assembly_properties(chains_as_dicts, assemblies)
         result = assemblies_with_props[0]
 
+        # --- Assertions with improved context ---
         self.assertIn('mass', result)
         self.assertIn('bonds', result)
         self.assertIn('hydrophobicity', result)
-        self.assertGreater(result['mass'], 0)
-        self.assertEqual(result['bonds'], 0)
+
+        # Verify mass calculation
+        from pyteomics import mass
+        expected_mass = mass.calculate_mass(sequence="PEPTIDE", average=True) + \
+                        mass.calculate_mass(sequence="SEQUENCE", average=True)
+        self.assertAlmostEqual(
+            result['mass'], expected_mass, places=2,
+            msg="Assembly mass calculation is incorrect."
+        )
+
+        self.assertEqual(result['bonds'], 0, "Expected zero disulfide bonds for this assembly.")
 
         # Verify hydrophobicity calculation
         expected_hydro = sum(KYTE_DOOLITTLE.get(aa, 0) for aa in "PEPTIDE") + \
                          sum(KYTE_DOOLITTLE.get(aa, 0) for aa in "SEQUENCE")
-        self.assertAlmostEqual(result['hydrophobicity'], expected_hydro, places=2)
+        self.assertAlmostEqual(
+            result['hydrophobicity'], expected_hydro, places=2,
+            msg="Assembly hydrophobicity calculation is incorrect."
+        )
 
     def test_disulfide_bond_mass_loss(self):
         chains_as_dicts = [asdict(c) for c in self.chains_with_cys]
