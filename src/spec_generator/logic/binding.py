@@ -61,7 +61,7 @@ def execute_binding_simulation(
         # 3. Create mzML content
         mzml_content = create_mzml_content_et(
             mz_range=mz_range,
-            run_data=final_spectra,
+            run_data=[final_spectra], # Wrap in list for mzML writer
             scan_interval=lc.scan_interval,
             update_queue=None
         )

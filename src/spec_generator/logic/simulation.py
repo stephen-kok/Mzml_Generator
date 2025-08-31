@@ -99,10 +99,36 @@ def execute_simulation_and_write_mzml(
         if update_queue:
             update_queue.put(('progress_set', 55))
 
-        spectra_for_mzml = apply_lc_profile_and_noise(
-            mz_range, all_clean_spectra, lc.num_scans, lc.gaussian_std_dev,
-            lc.lc_tailing_factor, common.seed, common.noise_option, common.pink_noise_enabled, update_queue
+        # --- LC Simulation and Noise ---
+        apex_scans = None
+        if lc.enabled and config.hydrophobicity_scores and len(config.hydrophobicity_scores) == len(all_clean_spectra):
+            scores = np.array(config.hydrophobicity_scores)
+            min_score, max_score = np.min(scores), np.max(scores)
+
+            if max_score == min_score:
+                # All species have the same hydrophobicity, elute in the center
+                apex_scans = [int(lc.num_scans / 2)] * len(scores)
+            else:
+                # Scale scores to scan range. Pad by 10% on each side.
+                scan_padding = int(lc.num_scans * 0.1)
+                usable_scan_range = lc.num_scans - 2 * scan_padding
+                scaled_scans = (scores - min_score) / (max_score - min_score) * usable_scan_range
+                apex_scans = [int(s + scan_padding) for s in scaled_scans]
+
+        combined_chromatogram = apply_lc_profile_and_noise(
+            mz_range=mz_range,
+            all_clean_spectra=all_clean_spectra,
+            num_scans=lc.num_scans,
+            gaussian_std_dev=lc.gaussian_std_dev,
+            lc_tailing_factor=lc.lc_tailing_factor,
+            seed=common.seed,
+            noise_option=common.noise_option,
+            pink_noise_enabled=common.pink_noise_enabled,
+            apex_scans=apex_scans,
+            update_queue=update_queue
         )
+        # Wrap the single chromatogram in a list to match the expected format for the mzML writer
+        spectra_for_mzml = [combined_chromatogram]
 
         mzml_content = create_mzml_content_et(
             mz_range, spectra_for_mzml,

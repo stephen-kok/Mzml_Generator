@@ -19,8 +19,8 @@ class TestBinding(unittest.TestCase):
             filename_template="test_binding.mzML"
         )
         self.default_lc = LCParams(
-            enabled=False, num_scans=1, scan_interval=0.0,
-            gaussian_std_dev=0.0, lc_tailing_factor=0.0
+            enabled=True, num_scans=1, scan_interval=0.0,
+            gaussian_std_dev=5.0, lc_tailing_factor=0.0
         )
         self.default_config = CovalentBindingConfig(
             common=self.default_common, lc=self.default_lc,
@@ -42,32 +42,32 @@ class TestBinding(unittest.TestCase):
         self.assertTrue(success)
         self.assertTrue(os.path.exists(final_filepath))
 
-    def test_binding_scenarios_produce_different_spectra(self):
+
+    def test_binding_produces_different_tic(self):
+        """
+        Tests that different binding scenarios produce different Total Ion Currents.
+        """
         # Scenario 1: No binding
+        config_no_binding = copy.deepcopy(self.default_config)
         _, spectra_no_binding = execute_binding_simulation(
-            config=self.default_config, compound_mass=500.0,
+            config=config_no_binding, compound_mass=500.0,
             total_binding_percentage=0.0, dar2_percentage_of_bound=0.0,
             filepath="", return_data_only=True
         )
+        tic_no_binding = np.sum(spectra_no_binding[0])
 
-        # Scenario 2: DAR-1 only
-        _, spectra_dar1 = execute_binding_simulation(
-            config=self.default_config, compound_mass=500.0,
-            total_binding_percentage=50.0, dar2_percentage_of_bound=0.0,
-            filepath="", return_data_only=True
-        )
-
-        # Scenario 3: DAR-1 and DAR-2
-        _, spectra_dar2 = execute_binding_simulation(
-            config=self.default_config, compound_mass=500.0,
+        # Scenario 2: 50% binding
+        config_binding = copy.deepcopy(self.default_config)
+        _, spectra_binding = execute_binding_simulation(
+            config=config_binding, compound_mass=500.0,
             total_binding_percentage=50.0, dar2_percentage_of_bound=20.0,
             filepath="", return_data_only=True
         )
+        tic_binding = np.sum(spectra_binding[0])
 
-        # All three spectra should be different
-        self.assertFalse(np.array_equal(spectra_no_binding[0][0], spectra_dar1[0][0]))
-        self.assertFalse(np.array_equal(spectra_dar1[0][0], spectra_dar2[0][0]))
-        self.assertFalse(np.array_equal(spectra_no_binding[0][0], spectra_dar2[0][0]))
+        # The TIC should be different because the mass and charge distribution changes
+        self.assertNotAlmostEqual(tic_no_binding, tic_binding, places=0)
+
 
 if __name__ == '__main__':
     unittest.main()

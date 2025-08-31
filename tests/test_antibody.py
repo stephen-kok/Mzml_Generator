@@ -3,10 +3,12 @@ from dataclasses import asdict
 
 from spec_generator.logic.antibody import (
     generate_assembly_combinations,
-    calculate_assembly_masses,
+    calculate_assembly_properties,
 )
 from spec_generator.config import Chain
 from spec_generator.core.constants import DISULFIDE_MASS_LOSS
+from spec_generator.logic.retention_time import KYTE_DOOLITTLE
+
 
 class TestAntibodyLogic(unittest.TestCase):
     def setUp(self):
@@ -31,23 +33,31 @@ class TestAntibodyLogic(unittest.TestCase):
         found = any(a['name'] == full_antibody['name'] and sorted(a['components']) == sorted(full_antibody['components']) for a in assemblies)
         self.assertTrue(found, "Standard H2L2 antibody not found in assemblies.")
 
-    def test_calculate_assembly_masses(self):
+    def test_calculate_assembly_properties(self):
         chains_as_dicts = [asdict(c) for c in self.chains]
         assemblies = [{'name': 'H1L1', 'components': ['H1', 'L1']}]
-        assemblies_with_mass = calculate_assembly_masses(chains_as_dicts, assemblies)
+        assemblies_with_props = calculate_assembly_properties(chains_as_dicts, assemblies)
+        result = assemblies_with_props[0]
 
-        self.assertIn('mass', assemblies_with_mass[0])
-        self.assertIn('bonds', assemblies_with_mass[0])
-        self.assertGreater(assemblies_with_mass[0]['mass'], 0)
-        self.assertEqual(assemblies_with_mass[0]['bonds'], 0)
+        self.assertIn('mass', result)
+        self.assertIn('bonds', result)
+        self.assertIn('hydrophobicity', result)
+        self.assertGreater(result['mass'], 0)
+        self.assertEqual(result['bonds'], 0)
+
+        # Verify hydrophobicity calculation
+        expected_hydro = sum(KYTE_DOOLITTLE.get(aa, 0) for aa in "PEPTIDE") + \
+                         sum(KYTE_DOOLITTLE.get(aa, 0) for aa in "SEQUENCE")
+        self.assertAlmostEqual(result['hydrophobicity'], expected_hydro, places=2)
 
     def test_disulfide_bond_mass_loss(self):
         chains_as_dicts = [asdict(c) for c in self.chains_with_cys]
         assemblies = [{'name': 'H_cysL_cys', 'components': ['H_cys', 'L_cys']}]
-        assemblies_with_mass = calculate_assembly_masses(chains_as_dicts, assemblies)
+        assemblies_with_props = calculate_assembly_properties(chains_as_dicts, assemblies)
+        result = assemblies_with_props[0]
 
         # 1 disulfide bond = 2 cysteines
-        self.assertEqual(assemblies_with_mass[0]['bonds'], 1)
+        self.assertEqual(result['bonds'], 1)
 
         # Calculate expected mass to verify the loss
         from pyteomics import mass
@@ -55,13 +65,13 @@ class TestAntibodyLogic(unittest.TestCase):
         mass_lc = mass.calculate_mass(sequence='SEQUENCEC', average=True)
         expected_mass = mass_hc + mass_lc - DISULFIDE_MASS_LOSS
 
-        self.assertAlmostEqual(assemblies_with_mass[0]['mass'], expected_mass, places=2)
+        self.assertAlmostEqual(result['mass'], expected_mass, places=2)
 
     def test_invalid_sequence_raises_error(self):
         chains_invalid = [asdict(Chain(type='HC', name='H_invalid', seq='INVALID_SEQUENCE', pyro_glu=False, k_loss=False))]
         assemblies = [{'name': 'H_invalid', 'components': ['H_invalid']}]
         with self.assertRaisesRegex(ValueError, "Could not process chain H_invalid"):
-            calculate_assembly_masses(chains_invalid, assemblies)
+            calculate_assembly_properties(chains_invalid, assemblies)
 
 if __name__ == '__main__':
     unittest.main()

@@ -84,7 +84,12 @@ def execute_peptide_map_simulation(
 
         # Use a fixed peak width for now
         lc_peak_scans = int(config.lc.peak_width_seconds / config.lc.scan_interval)
-        lc_shape = _get_lc_peak_shape(lc_peak_scans, lc_peak_scans / 6, 1.0)
+        apex_index = (lc_peak_scans - 1) / 2.0
+        # std_dev is ~ FWHM / 2.355. Here we approximate it as a fraction of total peak scans.
+        std_dev_scans = lc_peak_scans / 6
+        # tau is the tailing factor, placeholder for now
+        tau = 1.0
+        lc_shape = _get_lc_peak_shape(lc_peak_scans, apex_index, std_dev_scans, tau)
 
         for p_data in peptide_data:
             apex_scan = int(p_data["rt"] / scan_interval_minutes)
