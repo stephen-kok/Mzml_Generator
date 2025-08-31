@@ -120,7 +120,7 @@ class PeptideMapTab(BaseTab):
     def _generate_command(self):
         self.generate_button.config(state=DISABLED)
         self.progress_bar["value"] = 0
-        self.app_queue.put(('clear_log', None))
+        self.task_queue.put(('clear_log', None))
         threading.Thread(target=self._worker_generate, daemon=True).start()
 
     def _worker_generate(self):
@@ -139,12 +139,12 @@ class PeptideMapTab(BaseTab):
             execute_peptide_map_simulation(
                 config=config,
                 final_filepath=filepath,
-                update_queue=self.app_queue
+                update_queue=self.task_queue
             )
         except (ValueError, Exception) as e:
-            self.app_queue.put(('error', f"Simulation failed: {e}"))
+            self.task_queue.put(('error', f"Simulation failed: {e}"))
         finally:
-            self.app_queue.put(('done', None))
+            self.task_queue.put(('done', None))
 
     def _preview_command(self):
         self.preview_button.config(state=DISABLED)
@@ -156,7 +156,7 @@ class PeptideMapTab(BaseTab):
             result = execute_peptide_map_simulation(
                 config=config,
                 final_filepath="",
-                update_queue=self.app_queue,
+                update_queue=self.task_queue,
                 return_data_only=True
             )
             if result and isinstance(result, tuple):
@@ -166,11 +166,11 @@ class PeptideMapTab(BaseTab):
                 times = [i * config.lc.scan_interval / 60.0 for i in range(len(scans))]
                 show_plot(times, {"Base Peak Chromatogram": bpc}, "BPC Preview", xlabel="Time (min)", ylabel="Intensity")
             else:
-                self.app_queue.put(('error', "Could not generate preview data."))
+                self.task_queue.put(('error', "Could not generate preview data."))
         except (ValueError, Exception) as e:
-            self.app_queue.put(('error', f"Preview failed: {e}"))
+            self.task_queue.put(('error', f"Preview failed: {e}"))
         finally:
-            self.app_queue.put(('preview_done', None))
+            self.task_queue.put(('preview_done', None))
 
     def on_task_done(self):
         self.generate_button.config(state=NORMAL)

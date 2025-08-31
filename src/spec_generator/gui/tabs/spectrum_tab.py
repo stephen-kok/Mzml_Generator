@@ -15,9 +15,9 @@ from ...logic.spectrum_logic import SpectrumTabLogic
 
 
 class SpectrumTab(BaseTab):
-    def __init__(self, notebook, style, app_queue):
-        super().__init__(notebook, style, app_queue)
-        self.logic = SpectrumTabLogic(self.app_queue)
+    def __init__(self, notebook, style, app_controller=None):
+        super().__init__(notebook, style, app_controller=app_controller)
+        self.logic = SpectrumTabLogic()
 
     def create_widgets(self):
         self._create_protein_input_frame()
@@ -128,7 +128,8 @@ class SpectrumTab(BaseTab):
             config_dict = self._gather_config()
             masses, scalars = self.logic.validate_and_prepare_template_data(
                 config_dict['protein_masses_str'],
-                config_dict['intensity_scalars_str']
+                config_dict['intensity_scalars_str'],
+                self.task_queue
             )
 
             filepath = filedialog.asksaveasfilename(
@@ -145,7 +146,7 @@ class SpectrumTab(BaseTab):
                 writer.writerow(['Protein', 'Intensity'])
                 writer.writerows(zip(masses, scalars))
 
-            self.app_queue.put(('log', f"Saved template to {os.path.basename(filepath)}\n"))
+            self.task_queue.put(('log', f"Saved template to {os.path.basename(filepath)}\n"))
             self.protein_list_file_var.set(filepath)
         except ValueError as e:
              messagebox.showerror("Error", str(e))
@@ -165,12 +166,12 @@ class SpectrumTab(BaseTab):
     def generate_spectrum_command(self):
         self.spectrum_generate_button.config(state=DISABLED)
         self.progress_bar["value"] = 0
-        self.app_queue.put(('clear_log', None))
+        self.task_queue.put(('clear_log', None))
         try:
             config_dict = self._gather_config()
-            self.logic.generate_spectrum(config_dict)
+            self.logic.generate_spectrum(config_dict, self.task_queue)
         except ValueError as e:
-            self.app_queue.put(('error', f"Invalid input: {e}"))
+            self.task_queue.put(('error', f"Invalid input: {e}"))
             self.on_task_done()
 
     def preview_spectrum_command(self):
@@ -178,12 +179,12 @@ class SpectrumTab(BaseTab):
         try:
             config_dict = self._gather_config()
             # Run the preview logic in a separate thread to avoid blocking the GUI
-            threading.Thread(target=self.logic.preview_spectrum, args=(config_dict,), daemon=True).start()
+            threading.Thread(target=self.logic.preview_spectrum, args=(config_dict, self.task_queue), daemon=True).start()
         except ValueError as e:
-            self.app_queue.put(('error', f"Invalid input for preview: {e}"))
+            self.task_queue.put(('error', f"Invalid input for preview: {e}"))
             self.on_preview_done()
         except Exception as e:
-            self.app_queue.put(('error', f"An unexpected error occurred: {e}"))
+            self.task_queue.put(('error', f"An unexpected error occurred: {e}"))
             self.on_preview_done()
 
     def generate_and_plot_command(self):
@@ -194,14 +195,17 @@ class SpectrumTab(BaseTab):
                 messagebox.showwarning("Warning", "Plotting is only available for manually entered proteins, not for file-based batch processing.")
                 self.on_plot_done()
                 return
-            self.logic.start_plot_generation(config_dict, self._handle_plot_result)
+            self.logic.start_plot_generation(config_dict, self.task_queue, self._handle_plot_result)
         except ValueError as e:
-            self.app_queue.put(('error', f"Invalid input: {e}"))
+            self.task_queue.put(('error', f"Invalid input: {e}"))
             self.on_plot_done()
 
     def _handle_plot_result(self, result):
-        if result:
-            self.app_queue.put(('plot_data', result))
+        if result and self.app_controller:
+            plot_viewer = self.app_controller.get_plot_viewer()
+            if plot_viewer:
+                plot_viewer.plot_data(result)
+                self.app_controller.switch_to_plot_viewer()
         # If result is None, it means an error occurred during process setup
         # The error message should have already been put on the queue by the logic class
         self.on_plot_done()

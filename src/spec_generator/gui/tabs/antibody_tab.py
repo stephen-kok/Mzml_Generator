@@ -196,7 +196,7 @@ class AntibodyTab(BaseTab):
 
     def _preview_assemblies_command(self):
         self.output_text.delete('1.0', "end")
-        self.app_queue.put(('log', "Generating assembly preview...\n"))
+        self.task_queue.put(('log', "Generating assembly preview...\n"))
 
         try:
             for item in self.assemblies_tree.get_children():
@@ -224,15 +224,15 @@ class AntibodyTab(BaseTab):
                 self.assembly_abundances[name] = abundance_var
                 self.assemblies_tree.insert("", "end", values=(name, mass_str, bonds_str, abundance_var.get()))
 
-            self.app_queue.put(('log', f"Successfully generated {len(assemblies_with_mass)} species. You can now edit their relative abundances.\n"))
+            self.task_queue.put(('log', f"Successfully generated {len(assemblies_with_mass)} species. You can now edit their relative abundances.\n"))
 
         except (ValueError, Exception) as e:
-            self.app_queue.put(('error', str(e)))
+            self.task_queue.put(('error', str(e)))
 
     def generate_antibody_spectra_command(self):
         self.antibody_generate_button.config(state=DISABLED)
         self.progress_bar["value"] = 0
-        self.app_queue.put(('clear_log', None))
+        self.task_queue.put(('clear_log', None))
         threading.Thread(target=self._worker_generate_antibody_spectra, daemon=True).start()
 
     def _on_treeview_double_click(self, event):
@@ -273,17 +273,17 @@ class AntibodyTab(BaseTab):
             success = execute_antibody_simulation(
                 config=config,
                 final_filepath=filepath,
-                update_queue=self.app_queue
+                update_queue=self.task_queue
             )
 
             if success:
-                self.app_queue.put(('done', "Antibody mzML file successfully created."))
+                self.task_queue.put(('done', "Antibody mzML file successfully created."))
             else:
-                self.app_queue.put(('done', None))
+                self.task_queue.put(('done', None))
 
         except (ValueError, Exception) as e:
-            self.app_queue.put(('error', f"Simulation failed: {e}"))
-            self.app_queue.put(('done', None))
+            self.task_queue.put(('error', f"Simulation failed: {e}"))
+            self.task_queue.put(('done', None))
 
     def on_task_done(self):
         self.antibody_generate_button.config(state=NORMAL)
