@@ -135,5 +135,79 @@ class TestSimulation(unittest.TestCase):
                 msg=f"Expected a peak for charge state {z} at m/z ~{expected_mz:.2f}, but found none."
             )
 
+    def test_parallel_simulation_matches_sequential(self):
+        """
+        Verify that the parallel simulation (for both multi-protein and mass
+        inhomogeneity) produces the exact same output as the original
+        sequential implementation when the same seed is used.
+        """
+        import numpy as np
+        from spec_generator.core.spectrum import generate_protein_spectrum
+        from spec_generator.core.lc import apply_lc_profile_and_noise
+
+        # Use a config with multiple proteins and mass inhomogeneity
+        config = copy.deepcopy(self.default_config)
+        config.protein_masses = [25000.0, 30000.0]
+        config.intensity_scalars = [1.0, 0.8]
+        config.mass_inhomogeneity = 2.0
+        config.common.seed = 42
+        config.lc.enabled = True
+        config.lc.num_scans = 10 # Reduced from 50 to prevent timeout
+
+        # 1. Get the result from the parallel implementation
+        mz_range_parallel, spectra_parallel = execute_simulation_and_write_mzml(
+            config=config, final_filepath="", update_queue=None, return_data_only=True
+        )
+
+        # 2. Manually run the sequential logic to get the expected result
+
+        # Reset the random seed to ensure the mass distribution is the same
+        np.random.seed(config.common.seed)
+
+        common = config.common
+        lc = config.lc
+        mz_range_seq = np.arange(common.mz_range_start, common.mz_range_end + common.mz_step, common.mz_step)
+
+        all_clean_spectra_seq = []
+        for i, protein_mass in enumerate(config.protein_masses):
+            if config.mass_inhomogeneity > 0:
+                num_samples = 7
+                mass_distribution = np.random.normal(loc=protein_mass, scale=config.mass_inhomogeneity, size=num_samples)
+                total_spectrum = np.zeros_like(mz_range_seq, dtype=float)
+                for sub_mass in mass_distribution:
+                    spectrum = generate_protein_spectrum(
+                        sub_mass, mz_range_seq, common.mz_step, common.peak_sigma_mz,
+                        config.intensity_scalars[i], common.isotopic_enabled, common.resolution
+                    )
+                    total_spectrum += spectrum
+                clean_spectrum = total_spectrum / num_samples
+            else:
+                clean_spectrum = generate_protein_spectrum(
+                    protein_mass, mz_range_seq, common.mz_step, common.peak_sigma_mz,
+                    config.intensity_scalars[i], common.isotopic_enabled, common.resolution
+                )
+            all_clean_spectra_seq.append(clean_spectrum)
+
+        spectra_seq = apply_lc_profile_and_noise(
+            mz_range=mz_range_seq, all_clean_spectra=all_clean_spectra_seq, num_scans=lc.num_scans,
+            gaussian_std_dev=lc.gaussian_std_dev, lc_tailing_factor=lc.lc_tailing_factor,
+            seed=common.seed, noise_option=common.noise_option, pink_noise_enabled=common.pink_noise_enabled,
+            apex_scans=None, update_queue=None
+        )
+
+        # 3. Compare the results
+        np.testing.assert_allclose(mz_range_parallel, mz_range_seq)
+        combined_chromatogram_parallel = spectra_parallel[0]
+        self.assertEqual(len(combined_chromatogram_parallel), len(spectra_seq))
+        for i in range(len(combined_chromatogram_parallel)):
+            np.testing.assert_allclose(
+                combined_chromatogram_parallel[i],
+                spectra_seq[i],
+                rtol=1e-7,
+                atol=1e-7,
+                err_msg=f"Scan {i} does not match between parallel and sequential simulation."
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

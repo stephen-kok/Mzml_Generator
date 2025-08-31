@@ -102,5 +102,80 @@ class TestBinding(unittest.TestCase):
             )
 
 
+    def test_parallel_binding_matches_sequential(self):
+        """
+        Verify that the parallel implementation of generate_binding_spectrum
+        produces the exact same output as the original sequential version.
+        """
+        import numpy as np
+        from spec_generator.core.spectrum import generate_protein_spectrum, generate_binding_spectrum
+
+        mz_range = np.arange(400.0, 2500.0, 0.02)
+
+        params = {
+            "protein_avg_mass": 25000.0,
+            "compound_avg_mass": 500.0,
+            "mz_range": mz_range,
+            "mz_step_float": 0.02,
+            "peak_sigma_mz_float": 0.01,
+            "total_binding_percentage": 50.0,
+            "dar2_percentage_of_bound": 20.0,
+            "original_intensity_scalar": 1.0,
+            "isotopic_enabled": True,
+            "resolution": 120000
+        }
+
+        # 1. Get the result from the parallel implementation
+        parallel_result = generate_binding_spectrum(**params)
+
+        # 2. Manually run the sequential logic to get the expected result
+        native_intensity_scalar = params["original_intensity_scalar"] * (100 - params["total_binding_percentage"]) / 100.0
+        total_bound_intensity = params["original_intensity_scalar"] * (params["total_binding_percentage"] / 100.0)
+        dar2_intensity_scalar = 0.0
+        if params["total_binding_percentage"] > 0 and params["dar2_percentage_of_bound"] > 0:
+            dar2_intensity_scalar = total_bound_intensity * (params["dar2_percentage_of_bound"] / 100.0)
+        dar1_intensity_scalar = total_bound_intensity - dar2_intensity_scalar
+
+        # In the new implementation, generate_protein_spectrum is called in parallel.
+        # To test against the old implementation, we call it sequentially here.
+        native_spectrum = generate_protein_spectrum(
+            protein_avg_mass=params["protein_avg_mass"],
+            mz_range=params["mz_range"],
+            mz_step_float=params["mz_step_float"],
+            peak_sigma_mz_float=params["peak_sigma_mz_float"],
+            intensity_scalar=native_intensity_scalar,
+            isotopic_enabled=params["isotopic_enabled"],
+            resolution=params["resolution"]
+        )
+        dar1_spectrum = generate_protein_spectrum(
+            protein_avg_mass=params["protein_avg_mass"] + params["compound_avg_mass"],
+            mz_range=params["mz_range"],
+            mz_step_float=params["mz_step_float"],
+            peak_sigma_mz_float=params["peak_sigma_mz_float"],
+            intensity_scalar=dar1_intensity_scalar,
+            isotopic_enabled=params["isotopic_enabled"],
+            resolution=params["resolution"]
+        )
+        dar2_spectrum = generate_protein_spectrum(
+            protein_avg_mass=params["protein_avg_mass"] + 2 * params["compound_avg_mass"],
+            mz_range=params["mz_range"],
+            mz_step_float=params["mz_step_float"],
+            peak_sigma_mz_float=params["peak_sigma_mz_float"],
+            intensity_scalar=dar2_intensity_scalar,
+            isotopic_enabled=params["isotopic_enabled"],
+            resolution=params["resolution"]
+        )
+        sequential_result = native_spectrum + dar1_spectrum + dar2_spectrum
+
+        # 3. Compare the results
+        np.testing.assert_allclose(
+            parallel_result,
+            sequential_result,
+            rtol=1e-7,
+            atol=1e-7,
+            err_msg="Parallel binding spectrum generation does not match sequential execution."
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

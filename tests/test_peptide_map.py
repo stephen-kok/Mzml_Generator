@@ -193,5 +193,93 @@ class TestPeptideMapSimulation(unittest.TestCase):
                 self.assertLess(intensity, found_intensities[primary_charge])
 
 
+    def test_parallel_execution_matches_sequential(self):
+        """
+        Verify that the parallel peptide map implementation produces the exact
+        same output as the original sequential implementation when the same
+        seed is used.
+        """
+        import numpy as np
+        from spec_generator.logic.peptide import digest_sequence
+        from spec_generator.logic.retention_time import predict_retention_times
+        from spec_generator.core.spectrum import generate_peptide_spectrum
+        from spec_generator.logic.charge import predict_charge_states
+        from spec_generator.core.lc import _get_lc_peak_shape
+
+        # Use a smaller configuration to make the test faster
+        common_params = CommonParams(
+            isotopic_enabled=True, resolution=10000, peak_sigma_mz=0.0,
+            mz_step=0.1, mz_range_start=400.0, mz_range_end=800.0, # Smaller range
+            noise_option="No Noise", pink_noise_enabled=False,
+            output_directory=self.test_dir, seed=42, filename_template=""
+        )
+        lc_params = PeptideMapLCParams(run_time=0.5, scan_interval=1.0, peak_width_seconds=10.0) # Shorter run
+        config = PeptideMapSimConfig(
+            common=common_params, lc=lc_params, sequence="TESTK", # Shorter sequence
+            missed_cleavages=0, predict_charge=True, charge_state=0
+        )
+
+        # 1. Get the result from the parallel implementation
+        mz_range_parallel, final_scans_parallel = execute_peptide_map_simulation(
+            config=config, final_filepath="", update_queue=None, return_data_only=True
+        )
+
+        # 2. Manually run the sequential logic to get the expected result
+        peptides = digest_sequence(config.sequence, missed_cleavages=config.missed_cleavages)
+        retention_times = predict_retention_times(peptides, total_run_time_minutes=config.lc.run_time)
+        mz_range = np.arange(config.common.mz_range_start, config.common.mz_range_end, config.common.mz_step)
+        peak_sigma_mz = config.common.mz_range_end / (config.common.resolution * 2.355)
+
+        peptide_data_sequential = []
+        for peptide in peptides:
+            total_spectrum = np.zeros_like(mz_range)
+            base_intensity = 1000.0
+            if config.predict_charge:
+                charge_distribution = predict_charge_states(peptide)
+                for charge, rel_intensity in charge_distribution.items():
+                    spectrum_for_charge = generate_peptide_spectrum(
+                        peptide_sequence=peptide, mz_range=mz_range, peak_sigma_mz_float=peak_sigma_mz,
+                        intensity_scalar=base_intensity * rel_intensity, resolution=config.common.resolution,
+                        charge=charge
+                    )
+                    total_spectrum += spectrum_for_charge
+            else:
+                total_spectrum = generate_peptide_spectrum(
+                    peptide_sequence=peptide, mz_range=mz_range, peak_sigma_mz_float=peak_sigma_mz,
+                    intensity_scalar=base_intensity, resolution=config.common.resolution,
+                    charge=config.charge_state
+                )
+            peptide_data_sequential.append({
+                "sequence": peptide, "rt": retention_times[peptide], "spectrum": total_spectrum
+            })
+
+        scan_interval_minutes = config.lc.scan_interval / 60.0
+        num_scans = int(config.lc.run_time / scan_interval_minutes)
+        final_scans_sequential = [np.zeros_like(mz_range) for _ in range(num_scans)]
+        lc_peak_scans = int(config.lc.peak_width_seconds / config.lc.scan_interval)
+        apex_index = (lc_peak_scans - 1) / 2.0
+        std_dev_scans = lc_peak_scans / 6
+        tau = 1.0
+        lc_shape = _get_lc_peak_shape(lc_peak_scans, apex_index, std_dev_scans, tau)
+        for p_data in peptide_data_sequential:
+            apex_scan = int(p_data["rt"] / scan_interval_minutes)
+            start_scan = apex_scan - (lc_peak_scans // 2)
+            for i in range(lc_peak_scans):
+                scan_idx = start_scan + i
+                if 0 <= scan_idx < num_scans:
+                    final_scans_sequential[scan_idx] += p_data["spectrum"] * lc_shape[i]
+
+        # 3. Compare the results
+        self.assertEqual(len(final_scans_parallel), len(final_scans_sequential))
+        for i in range(len(final_scans_parallel)):
+            np.testing.assert_allclose(
+                final_scans_parallel[i],
+                final_scans_sequential[i],
+                rtol=1e-7,
+                atol=1e-7,
+                err_msg=f"Scan {i} does not match between parallel and sequential execution."
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

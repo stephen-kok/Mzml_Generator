@@ -1,4 +1,6 @@
 import math
+import multiprocessing
+import itertools
 import numpy as np
 import numba
 
@@ -188,40 +190,62 @@ def generate_binding_spectrum(
     dar2_percentage_of_bound: float,
     original_intensity_scalar: float,
     isotopic_enabled: bool,
-    resolution: float
+    resolution: float,
 ) -> np.ndarray:
     """
     Generates a spectrum for a covalent binding scenario, including native,
-    DAR-1, and DAR-2 species.
+    DAR-1, and DAR-2 species. The generation of each species is done in parallel.
     """
     # Calculate intensity scalars for each species based on binding percentages
-    native_intensity_scalar = original_intensity_scalar * (100 - total_binding_percentage) / 100.0
-    total_bound_intensity = original_intensity_scalar * (total_binding_percentage / 100.0)
+    native_intensity_scalar = (
+        original_intensity_scalar * (100 - total_binding_percentage) / 100.0
+    )
+    total_bound_intensity = original_intensity_scalar * (
+        total_binding_percentage / 100.0
+    )
 
     dar2_intensity_scalar = 0.0
     if total_binding_percentage > 0 and dar2_percentage_of_bound > 0:
-        dar2_intensity_scalar = total_bound_intensity * (dar2_percentage_of_bound / 100.0)
+        dar2_intensity_scalar = total_bound_intensity * (
+            dar2_percentage_of_bound / 100.0
+        )
 
     dar1_intensity_scalar = total_bound_intensity - dar2_intensity_scalar
 
-    # Generate spectrum for each species
-    native_spectrum = generate_protein_spectrum(
-        protein_avg_mass, mz_range, mz_step_float, peak_sigma_mz_float,
-        native_intensity_scalar, isotopic_enabled, resolution
-    )
+    # Define the tasks for each species
+    tasks = [
+        (
+            protein_avg_mass,
+            mz_range,
+            mz_step_float,
+            peak_sigma_mz_float,
+            native_intensity_scalar,
+            isotopic_enabled,
+            resolution,
+        ),
+        (
+            protein_avg_mass + compound_avg_mass,
+            mz_range,
+            mz_step_float,
+            peak_sigma_mz_float,
+            dar1_intensity_scalar,
+            isotopic_enabled,
+            resolution,
+        ),
+        (
+            protein_avg_mass + 2 * compound_avg_mass,
+            mz_range,
+            mz_step_float,
+            peak_sigma_mz_float,
+            dar2_intensity_scalar,
+            isotopic_enabled,
+            resolution,
+        ),
+    ]
 
-    dar1_spectrum = np.zeros_like(mz_range)
-    if dar1_intensity_scalar > 0:
-        dar1_spectrum = generate_protein_spectrum(
-            protein_avg_mass + compound_avg_mass, mz_range, mz_step_float,
-            peak_sigma_mz_float, dar1_intensity_scalar, isotopic_enabled, resolution
-        )
+    # Generate spectra in parallel
+    with multiprocessing.Pool(processes=3) as pool:
+        results = pool.starmap(generate_protein_spectrum, tasks)
 
-    dar2_spectrum = np.zeros_like(mz_range)
-    if dar2_intensity_scalar > 0:
-        dar2_spectrum = generate_protein_spectrum(
-            protein_avg_mass + 2 * compound_avg_mass, mz_range, mz_step_float,
-            peak_sigma_mz_float, dar2_intensity_scalar, isotopic_enabled, resolution
-        )
-
-    return native_spectrum + dar1_spectrum + dar2_spectrum
+    # Sum the results
+    return np.sum(results, axis=0)
