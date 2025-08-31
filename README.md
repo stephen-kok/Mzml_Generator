@@ -135,16 +135,25 @@ To run this application, you need Python 3.10 or newer.
     ```
 
 3.  **Install the required dependencies:**
+
+    The project dependencies are defined in `pyproject.toml`. You can install them directly using pip:
     ```bash
-    pip install -r requirements.txt
+    pip install .
+    ```
+    For development purposes (e.g., to run tests), you can install the project in "editable" mode along with the testing dependencies:
+    ```bash
+    pip install -e .[test]
     ```
 
 ## Usage
 
-To run the application, simply execute the `main.py` script from the root of the repository:
-
+Once installed, you can run the application by executing the installed script:
 ```bash
-python main.py
+spec-generator
+```
+Alternatively, from the root of the repository, you can run the main module directly:
+```bash
+python -m src.spec_generator.main
 ```
 
 ## Project Structure

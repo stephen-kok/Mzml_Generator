@@ -13,7 +13,7 @@ import numpy as np
 from ...utils.ui_helpers import Tooltip, parse_float_entry, show_plot
 from ...utils.file_io import format_filename
 from ...logic.antibody import (generate_assembly_combinations,
-                               calculate_assembly_masses,
+                               calculate_assembly_properties,
                                execute_antibody_simulation)
 from .base_tab import BaseTab
 from ..shared_widgets import create_common_parameters_frame, create_lc_simulation_frame
@@ -212,7 +212,7 @@ class AntibodyTab(BaseTab):
             chains_as_dicts = [asdict(c) for c in chains]
 
             assemblies = generate_assembly_combinations(chains_as_dicts)
-            assemblies_with_mass = calculate_assembly_masses(chains_as_dicts, assemblies)
+            assemblies_with_mass = calculate_assembly_properties(chains_as_dicts, assemblies)
             # Sort by mass in ascending order
             assemblies_with_mass.sort(key=lambda x: x['mass'])
 
