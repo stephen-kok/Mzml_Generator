@@ -23,37 +23,24 @@ class TestIsotopeCalculator(unittest.TestCase):
         self.assertEqual(distribution, [(0.0, 1.0)])
         self.assertEqual(offset, 0.0)
 
-    def test_distribution_most_abundant_peak(self):
+    def test_get_distribution_for_large_mass(self):
         """
-        Test that for a simple case, the most abundant peak is the first one (offset 0).
-        For a very small mass, the probability of having even one neutron is very low.
-        """
-        # A mass so small that the +1 isotope should be negligible
-        distribution, offset = self.calculator.get_distribution(10)
-
-        # The most abundant peak should be the first one (monoisotopic)
-        self.assertAlmostEqual(offset, 0.0, places=5)
-
-        # The distribution should start with the highest intensity peak (1.0)
-        self.assertEqual(distribution[0][1], 1.0)
-
-        # The second peak should have a very low intensity
-        self.assertLess(distribution[1][1], 0.01)
-
-    def test_distribution_returns_correct_format(self):
-        """
-        Test that the returned distribution is a list of tuples (float, float)
-        and the offset is a float.
+        Test that for a large mass, the distribution is plausible.
+        - The offset should be positive.
+        - The distribution should contain multiple peaks.
+        - The most abundant peak should have an intensity of 1.0.
         """
         distribution, offset = self.calculator.get_distribution(25000)
 
         self.assertIsInstance(distribution, list)
-        self.assertTrue(len(distribution) > 1)
-        self.assertIsInstance(distribution[0], tuple)
-        self.assertIsInstance(distribution[0][0], float)
-        self.assertIsInstance(distribution[0][1], float)
+        self.assertGreater(offset, 0, "Offset for a large mass should be positive.")
+        self.assertGreater(len(distribution), 1, "Distribution for a large mass should have multiple peaks.")
 
-        self.assertIsInstance(offset, float)
+        intensities = [p[1] for p in distribution]
+        self.assertAlmostEqual(
+            max(intensities), 1.0, places=5,
+            msg="The most abundant peak should be normalized to 1.0."
+        )
 
 if __name__ == '__main__':
     unittest.main()

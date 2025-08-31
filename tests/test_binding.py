@@ -68,6 +68,39 @@ class TestBinding(unittest.TestCase):
         # The TIC should be different because the mass and charge distribution changes
         self.assertNotAlmostEqual(tic_no_binding, tic_binding, places=0)
 
+    def test_binding_peak_is_correct(self):
+        """
+        Test that the simulation generates a peak at the correct m/z for a
+        fully bound species.
+        """
+        protein_mass = 25000.0
+        compound_mass = 500.0
+        config = copy.deepcopy(self.default_config)
+        config.protein_avg_mass = protein_mass
+        # Force 100% DAR1 binding
+        config.prob_binding = 1.0
+        config.prob_dar2 = 0.0
+        config.total_binding_range = (100.0, 100.0)
+
+        mz_range, spectra = execute_binding_simulation(
+            config=config, compound_mass=compound_mass,
+            total_binding_percentage=100.0, dar2_percentage_of_bound=0.0,
+            filepath="", return_data_only=True
+        )
+        spectrum = spectra[0] # The simulation returns a list of spectra directly
+
+        PROTON_MASS = 1.007276
+        bound_mass = protein_mass + compound_mass
+
+        # Check for a few expected charge states of the bound species
+        for z in [15, 16, 17]:
+            expected_mz = (bound_mass + z * PROTON_MASS) / z
+            idx = np.abs(mz_range - expected_mz).argmin()
+            self.assertGreater(
+                spectrum[idx], 0,
+                msg=f"Expected a peak for bound species at z={z} (m/z ~{expected_mz:.2f}), but found none."
+            )
+
 
 if __name__ == '__main__':
     unittest.main()

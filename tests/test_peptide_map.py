@@ -104,5 +104,41 @@ class TestPeptideMapSimulation(unittest.TestCase):
         num_scans = int(lc_params.run_time * 60 / lc_params.scan_interval)
         self.assertEqual(len(final_scans), num_scans)
 
+    def test_peptide_map_content_is_correct(self):
+        """
+        Test that the peptide map simulation generates peaks for the correct
+        digested peptides at their expected m/z values.
+        """
+        import numpy as np
+        from pyteomics import mass
+
+        common_params = CommonParams(
+            isotopic_enabled=True, resolution=120000, peak_sigma_mz=0.0,
+            mz_step=0.01, mz_range_start=50.0, mz_range_end=1000.0,
+            noise_option="No Noise", pink_noise_enabled=False,
+            output_directory=self.test_dir, seed=123, filename_template=""
+        )
+        lc_params = PeptideMapLCParams(run_time=1.0, scan_interval=1.0, peak_width_seconds=30.0)
+        config = PeptideMapSimConfig(
+            common=common_params, lc=lc_params, sequence="PEPTIDERKTEST",
+            missed_cleavages=0, charge_state=2
+        )
+
+        mz_range, final_scans = execute_peptide_map_simulation(
+            config=config, final_filepath="", update_queue=None, return_data_only=True
+        )
+
+        # Combine all scans to get the total signal
+        total_signal = np.sum(final_scans, axis=0)
+
+        expected_peptides = ["PEPTIDER", "K", "TEST"]
+        for peptide in expected_peptides:
+            expected_mz = mass.calculate_mass(sequence=peptide, charge=config.charge_state)
+            idx = np.abs(mz_range - expected_mz).argmin()
+            self.assertGreater(
+                total_signal[idx], 0,
+                msg=f"Expected peak for peptide '{peptide}' at m/z ~{expected_mz:.2f}, but none was found."
+            )
+
 if __name__ == '__main__':
     unittest.main()
