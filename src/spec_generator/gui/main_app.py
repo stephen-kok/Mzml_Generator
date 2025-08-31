@@ -32,6 +32,7 @@ class CombinedSpectrumSequenceApp:
         self.add_tab(AntibodyTab, "Antibody Simulation")
         self.add_tab(PeptideMapTab, "Peptide Map")
 
+        self._setup_queue_handlers()
         self.process_queue()
         master.minsize(650, 600)
 
@@ -47,6 +48,64 @@ class CombinedSpectrumSequenceApp:
         except tk.TclError:
             return None # No tab selected
 
+    def _setup_queue_handlers(self):
+        self.queue_handlers = {
+            'log': self._handle_log,
+            'clear_log': self._handle_clear_log,
+            'progress_set': self._handle_progress_set,
+            'progress_add': self._handle_progress_add,
+            'progress_max': self._handle_progress_max,
+            'error': self._handle_error,
+            'warning': self._handle_warning,
+            'done': self._handle_done,
+            'preview_done': self._handle_preview_done,
+        }
+
+    def _handle_log(self, msg_data, active_tab):
+        output_text, _ = active_tab.get_log_widgets()
+        if output_text:
+            output_text.insert("end", msg_data)
+            output_text.see("end")
+
+    def _handle_clear_log(self, msg_data, active_tab):
+        output_text, _ = active_tab.get_log_widgets()
+        if output_text:
+            output_text.delete('1.0', "end")
+
+    def _handle_progress_set(self, msg_data, active_tab):
+        _, progress_bar = active_tab.get_log_widgets()
+        if progress_bar:
+            progress_bar["value"] = msg_data
+
+    def _handle_progress_add(self, msg_data, active_tab):
+        _, progress_bar = active_tab.get_log_widgets()
+        if progress_bar:
+            progress_bar["value"] += msg_data
+
+    def _handle_progress_max(self, msg_data, active_tab):
+        _, progress_bar = active_tab.get_log_widgets()
+        if progress_bar:
+            progress_bar["maximum"] = msg_data
+
+    def _handle_error(self, msg_data, active_tab):
+        _, progress_bar = active_tab.get_log_widgets()
+        messagebox.showerror("Error", msg_data)
+        if progress_bar:
+            progress_bar["value"] = 0
+
+    def _handle_warning(self, msg_data, active_tab):
+        messagebox.showwarning("Warning", msg_data)
+
+    def _handle_done(self, msg_data, active_tab):
+        if active_tab:
+            active_tab.on_task_done()
+        if msg_data:
+            messagebox.showinfo("Complete", msg_data)
+
+    def _handle_preview_done(self, msg_data, active_tab):
+        if active_tab and hasattr(active_tab, 'on_preview_done'):
+            active_tab.on_preview_done()
+
     def process_queue(self):
         try:
             while True:
@@ -56,35 +115,10 @@ class CombinedSpectrumSequenceApp:
                 if not active_tab:
                     continue
 
-                output_text, progress_bar = active_tab.get_log_widgets()
+                handler = self.queue_handlers.get(msg_type)
+                if handler:
+                    handler(msg_data, active_tab)
 
-                if msg_type == 'log':
-                    if output_text:
-                        output_text.insert("end", msg_data)
-                        output_text.see("end")
-                elif msg_type == 'clear_log':
-                    if output_text:
-                        output_text.delete('1.0', "end")
-                elif msg_type == 'progress_set':
-                    if progress_bar:
-                        progress_bar["value"] = msg_data
-                elif msg_type == 'progress_add':
-                    if progress_bar:
-                        progress_bar["value"] += msg_data
-                elif msg_type == 'error':
-                    messagebox.showerror("Error", msg_data)
-                    if progress_bar:
-                        progress_bar["value"] = 0
-                elif msg_type == 'warning':
-                    messagebox.showwarning("Warning", msg_data)
-                elif msg_type == 'done':
-                    if active_tab:
-                        active_tab.on_task_done()
-                    if msg_data:
-                        messagebox.showinfo("Complete", msg_data)
-                elif msg_type == 'preview_done':
-                    if active_tab and hasattr(active_tab, 'on_preview_done'):
-                        active_tab.on_preview_done()
         except queue.Empty:
             pass
         finally:
