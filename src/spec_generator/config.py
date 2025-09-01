@@ -1,5 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Tuple, Dict
+
+from .logic.ptm import Ptm
 
 @dataclass
 class CommonParams:
@@ -66,6 +68,7 @@ class Chain:
     seq: str
     pyro_glu: bool
     k_loss: bool
+    ptms: List[Ptm] = field(default_factory=list)
 
 @dataclass
 class AntibodySimConfig:

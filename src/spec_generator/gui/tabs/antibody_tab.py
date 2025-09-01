@@ -3,7 +3,7 @@ import threading
 from dataclasses import asdict
 from datetime import datetime
 from tkinter import (HORIZONTAL, LEFT, NORMAL, DISABLED, NSEW, SUNKEN, WORD,
-                     StringVar, messagebox, Text, E, BooleanVar)
+                     StringVar, messagebox, Text, E, BooleanVar, Toplevel)
 
 from ttkbootstrap import widgets as ttk
 from ttkbootstrap.constants import PRIMARY
@@ -16,8 +16,9 @@ from ...logic.antibody import (generate_assembly_combinations,
                                calculate_assembly_properties,
                                execute_antibody_simulation)
 from .base_tab import BaseTab
-from ..shared_widgets import create_common_parameters_frame, create_lc_simulation_frame
-from ...config import AntibodySimConfig, Chain
+from ..shared_widgets import (create_common_parameters_frame,
+                              create_lc_simulation_frame, PtmEditor)
+from ...config import AntibodySimConfig, Chain, Ptm
 
 class AntibodyTab(BaseTab):
     def create_widgets(self):
@@ -120,9 +121,13 @@ class AntibodyTab(BaseTab):
             if k_loss:
                 modified_name += "[-K]"
 
+            ptms = []
+            if 'ptm_editor' in entry:
+                ptms = entry['ptm_editor'].get_ptm_configs()
+
             chains.append(Chain(
                 type=entry['type'], name=modified_name, seq=seq,
-                pyro_glu=pyro_glu, k_loss=k_loss
+                pyro_glu=pyro_glu, k_loss=k_loss, ptms=ptms
             ))
         return chains
 
@@ -142,6 +147,40 @@ class AntibodyTab(BaseTab):
             chains=chains,
             assembly_abundances=abundances
         )
+
+    def _open_ptm_editor(self, chain_entry_data: dict):
+        """
+        Opens a Toplevel window to edit PTMs for a specific chain.
+        """
+        if 'ptm_editor_window' in chain_entry_data and chain_entry_data['ptm_editor_window'].winfo_exists():
+            chain_entry_data['ptm_editor_window'].lift()
+            return
+
+        window = Toplevel(self.master)
+        window.title(f"PTM Editor for {chain_entry_data['name_var'].get()}")
+        window.transient(self.master)
+        window.grab_set()
+
+        if 'ptm_editor' not in chain_entry_data:
+            # Create and store the editor instance if it's the first time
+            ptm_editor = PtmEditor(window, padding=10)
+            chain_entry_data['ptm_editor'] = ptm_editor
+        else:
+            # Reuse existing editor
+            ptm_editor = chain_entry_data['ptm_editor']
+            # Reparent the editor to the new window
+            ptm_editor.master = window
+
+        ptm_editor.pack(fill="both", expand=True)
+
+        def on_close():
+            # Simply hide the window, don't destroy it, so settings are preserved
+            window.grab_release()
+            window.withdraw()
+
+        window.protocol("WM_DELETE_WINDOW", on_close)
+        chain_entry_data['ptm_editor_window'] = window
+
 
     def add_chain_row(self, chain_type, sequence=""):
         entry_data = {}
@@ -186,8 +225,12 @@ class AntibodyTab(BaseTab):
             widgets.append(k_loss_check)
             entry_data['k_loss_var'] = k_loss_var
 
+        ptm_button = ttk.Button(self.chain_inner_frame, text="PTMs...", command=lambda e=entry_data: self._open_ptm_editor(e), style='Outline.TButton')
+        ptm_button.grid(row=row, column=5, sticky="w", pady=2, padx=5)
+        widgets.append(ptm_button)
+
         remove_button = ttk.Button(self.chain_inner_frame, text="X", command=remove_chain_row, width=2, bootstyle="danger-outline")
-        remove_button.grid(row=row, column=5, sticky="w", pady=2, padx=5)
+        remove_button.grid(row=row, column=6, sticky="w", pady=2, padx=5)
         widgets.append(remove_button)
 
         entry_data['widgets'] = widgets

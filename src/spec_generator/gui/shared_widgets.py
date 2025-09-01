@@ -168,3 +168,91 @@ def create_lc_simulation_frame(parent, enabled_by_default=False):
     lc_check.config(command=_toggle)
     _toggle() # Set initial state
     return container, lc_params
+
+
+# --- PTM Editor Widget ---
+import tkinter as tk
+from ..logic.ptm import DEFAULT_PTMS, Ptm
+
+class PtmEditor(ttk.Frame):
+    """
+    A reusable widget for configuring a list of Post-Translational Modifications (PTMs).
+    """
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.ptm_vars = {}
+
+        # Create a header
+        ttk.Label(self, text="Name", font="-weight bold").grid(row=0, column=0, padx=5, pady=2, sticky=W)
+        ttk.Label(self, text="Residue", font="-weight bold").grid(row=0, column=1, padx=5, pady=2)
+        ttk.Label(self, text="Enabled", font="-weight bold").grid(row=0, column=2, padx=5, pady=2)
+        ttk.Label(self, text="Probability", font="-weight bold").grid(row=0, column=3, padx=5, pady=2)
+
+        row = 1
+        for name, ptm_template in DEFAULT_PTMS.items():
+            enabled_var = BooleanVar(value=False)
+            # Use the probability from the template if it exists and is > 0, else default to something sensible
+            default_prob = ptm_template.probability if hasattr(ptm_template, 'probability') and ptm_template.probability > 0 else 0.1
+            prob_var = tk.DoubleVar(value=default_prob)
+
+            self.ptm_vars[name] = {
+                "template": ptm_template,
+                "enabled": enabled_var,
+                "prob": prob_var
+            }
+
+            ttk.Label(self, text=name).grid(row=row, column=0, sticky="w", padx=5)
+            ttk.Label(self, text=f"({ptm_template.residue})").grid(row=row, column=1)
+
+            check = ttk.Checkbutton(self, variable=enabled_var, bootstyle="primary-round-toggle")
+            check.grid(row=row, column=2, padx=5)
+
+            spinbox = ttk.Spinbox(self, from_=0.0, to=1.0, increment=0.05, textvariable=prob_var, width=6)
+            spinbox.grid(row=row, column=3, padx=5)
+
+            # Disable spinbox if not checked
+            def _toggle_spinbox_state(sv=spinbox, en_var=enabled_var):
+                state = NORMAL if en_var.get() else DISABLED
+                sv.configure(state=state)
+
+            check.config(command=_toggle_spinbox_state)
+            _toggle_spinbox_state() # Set initial state
+
+            row += 1
+
+    def get_ptm_configs(self) -> list[Ptm]:
+        """
+        Returns a list of Ptm objects for the currently enabled and configured PTMs.
+        """
+        configs = []
+        for name, ptm_info in self.ptm_vars.items():
+            if ptm_info["enabled"].get():
+                configs.append(
+                    Ptm(
+                        name=ptm_info["template"].name,
+                        mass_shift=ptm_info["template"].mass_shift,
+                        residue=ptm_info["template"].residue,
+                        probability=ptm_info["prob"].get()
+                    )
+                )
+        return configs
+
+    def set_ptm_configs(self, configs: list[Ptm]):
+        """
+        Sets the state of the editor based on a list of Ptm objects.
+        """
+        # First, disable all
+        for ptm_info in self.ptm_vars.values():
+            ptm_info["enabled"].set(False)
+
+        # Then, enable and set probabilities for the provided configs
+        for config in configs:
+            if config.name in self.ptm_vars:
+                self.ptm_vars[config.name]["enabled"].set(True)
+                self.ptm_vars[config.name]["prob"].set(config.probability)
+
+        # Update spinbox states
+        for child in self.winfo_children():
+            if isinstance(child, ttk.Checkbutton):
+                child.invoke() # This will trigger the command
+                child.invoke() # Twice to restore original state
