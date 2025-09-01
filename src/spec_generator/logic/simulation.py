@@ -6,10 +6,13 @@ import numpy as np
 
 from ..core.lc import apply_lc_profile_and_noise
 from ..core.spectrum import generate_protein_spectrum
+from ..core.types import MSMSSpectrum
 from ..utils.mzml import create_mzml_content_et
 from ..utils.file_io import create_unique_filename
 from ..config import SpectrumGeneratorConfig
 from .retention_time import calculate_apex_scans_from_hydrophobicity
+from .fragmentation import generate_fragmentation_events
+from ..core.types import FragmentationEvent
 from collections import defaultdict
 
 
@@ -213,11 +216,33 @@ def execute_simulation_and_write_mzml(
             progress_callback('error', "Filename template resulted in an empty name.")
             return False
 
+        # --- Dummy MS/MS Data Generation ---
+        msms_spectra = []
+        if config.peptide_sequences:
+            for seq in config.peptide_sequences:
+                events = generate_fragmentation_events(
+                    sequence=seq,
+                    precursor_charge=2,
+                    ion_types=['y', 'b'],
+                    fragment_charges=[1],
+                    rt=30.0, # dummy rt
+                    precursor_intensity=1e5 # dummy intensity
+                )
+                msms_spectra.append(
+                    MSMSSpectrum(
+                        rt=30.0,
+                        precursor_mz=events[0].precursor_mz,
+                        precursor_charge=2,
+                        fragmentation_events=events
+                    )
+                )
+
         mzml_content = create_mzml_content_et(
             mz_range,
             spectra_for_mzml,
             config.lc.scan_interval if config.lc.enabled else 0.0,
             progress_callback,
+            msms_spectra=msms_spectra,
         )
         if mzml_content is None:
             return False
