@@ -130,7 +130,10 @@ class SpectrumTabLogic:
         filename = format_filename(config.common.filename_template, placeholders)
         filepath = os.path.join(config.common.output_directory, filename)
 
-        success = execute_simulation_and_write_mzml(config, filepath, task_queue)
+        # The lambda function acts as a bridge between the callback system and the GUI queue
+        success = execute_simulation_and_write_mzml(
+            config, filepath, progress_callback=lambda type, value: task_queue.put((type, value))
+        )
 
         if success:
             task_queue.put(('done', "mzML file successfully created."))
@@ -143,6 +146,7 @@ class SpectrumTabLogic:
             if not config.protein_masses:
                 raise ValueError("Please enter at least one protein mass.")
 
+            # Note: run_simulation_for_preview is now decoupled and does not need a callback.
             simulation_result = run_simulation_for_preview(config)
             if simulation_result:
                 mz_range, preview_spectrum = simulation_result

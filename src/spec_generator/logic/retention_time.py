@@ -49,3 +49,39 @@ def predict_retention_times(peptides: list[str], total_run_time_minutes: float =
     scaled_rts = (scores - min_score) / (max_score - min_score) * total_run_time_minutes
 
     return dict(zip(peptides, scaled_rts))
+
+
+def calculate_apex_scans_from_hydrophobicity(
+    scores: list[float], num_scans: int
+) -> list[int]:
+    """
+    Calculates the apex scan for each species based on its hydrophobicity score,
+    scaling the scores to fit within the available number of scans.
+
+    Args:
+        scores: A list of hydrophobicity scores.
+        num_scans: The total number of scans in the LC run.
+
+    Returns:
+        A list of integer scan indices corresponding to the apex of elution for each score.
+    """
+    if not scores:
+        return []
+
+    scores_arr = np.array(scores)
+    min_score, max_score = np.min(scores_arr), np.max(scores_arr)
+
+    if max_score == min_score:
+        # All species elute in the middle
+        return [int(num_scans / 2)] * len(scores)
+    else:
+        # Pad the elution time to avoid peaks at the very start/end of the chromatogram
+        scan_padding = int(num_scans * 0.1)
+        usable_scan_range = num_scans - 2 * scan_padding
+
+        # Scale scores to the usable scan range
+        scaled_scans = (
+            (scores_arr - min_score) / (max_score - min_score) * usable_scan_range
+        )
+        # Offset by the padding to place them in the middle of the run
+        return [int(s + scan_padding) for s in scaled_scans]

@@ -1,4 +1,3 @@
-import queue
 import math
 import numpy as np
 from numpy.random import default_rng
@@ -17,19 +16,19 @@ def generate_scaled_spectra(
     intensity_scalars: list[float],
     isotopic_enabled: bool,
     resolution: float,
-    update_queue: queue.Queue | None = None,
+    progress_callback=None,
 ) -> tuple[np.ndarray | None, list[np.ndarray] | None]:
     """
     Generates a list of clean (noiseless) base spectra for multiple proteins.
     """
+    progress_callback = progress_callback or (lambda *args: None)
     all_clean_spectra = []
     num_proteins = len(protein_masses_list)
     progress_per_protein = (50 / num_proteins) if num_proteins > 0 else 0
 
     try:
         for i, protein_mass in enumerate(protein_masses_list):
-            if update_queue:
-                update_queue.put(('log', f"Generating base spectrum for Protein (Mass: {protein_mass})...\n"))
+            progress_callback('log', f"Generating base spectrum for Protein (Mass: {protein_mass})...\n")
 
             spectrum = generate_protein_spectrum(
                 protein_mass, mz_range, mz_step_float, peak_sigma_mz_float,
@@ -37,12 +36,10 @@ def generate_scaled_spectra(
             )
             all_clean_spectra.append(spectrum)
 
-            if update_queue:
-                update_queue.put(('progress_add', progress_per_protein))
+            progress_callback('progress_add', progress_per_protein)
         return mz_range, all_clean_spectra
     except Exception as e:
-        if update_queue:
-            update_queue.put(('error', f"Error during base spectrum generation: {e}"))
+        progress_callback('error', f"Error during base spectrum generation: {e}")
         return None, None
 
 
@@ -77,15 +74,15 @@ def apply_lc_profile_and_noise(
     noise_option: str,
     pink_noise_enabled: bool,
     apex_scans: list[int] | None = None,
-    update_queue: queue.Queue | None = None,
+    progress_callback=None,
 ) -> list[np.ndarray]:
     """
     Applies an LC peak shape to a list of base spectra and combines them into
     a single chromatogram. Noise is applied to the final combined data.
     """
+    progress_callback = progress_callback or (lambda *args: None)
     if num_scans <= 0:
-        if update_queue:
-            update_queue.put(('error', "Number of scans must be positive."))
+        progress_callback('error', "Number of scans must be positive.")
         return []
 
     # If apex_scans aren't provided, all species elute at the center
@@ -98,8 +95,7 @@ def apply_lc_profile_and_noise(
     final_chromatogram = [np.zeros_like(mz_range, dtype=float) for _ in range(num_scans)]
     total_max_intensity = 0
 
-    if update_queue:
-        update_queue.put(('log', "Applying LC profiles and combining spectra...\n"))
+    progress_callback('log', "Applying LC profiles and combining spectra...\n")
 
     num_proteins = len(all_clean_spectra)
     progress_per_protein = 40 / num_proteins if num_proteins > 0 else 0
@@ -121,12 +117,10 @@ def apply_lc_profile_and_noise(
         if max_intensity_for_species > total_max_intensity:
             total_max_intensity = max_intensity_for_species
 
-        if update_queue:
-            update_queue.put(('progress_add', progress_per_protein))
+        progress_callback('progress_add', progress_per_protein)
 
     # Apply noise to the combined chromatogram
-    if update_queue:
-        update_queue.put(('log', "Applying scan-level noise to combined chromatogram...\n"))
+    progress_callback('log', "Applying scan-level noise to combined chromatogram...\n")
 
     if noise_option != "No Noise":
         noise_params = noise_presets.get(noise_option)
@@ -141,8 +135,8 @@ def apply_lc_profile_and_noise(
                     seed=seed + scan_idx,
                     **noise_params
                 )
-        elif update_queue:
-            update_queue.put(('log', f"Warning: Noise preset '{noise_option}' not found. Skipping noise.\n"))
+        else:
+            progress_callback('log', f"Warning: Noise preset '{noise_option}' not found. Skipping noise.\n")
 
     # Add baseline offset and ensure non-negative intensities
     baseline_offset = 10.0
