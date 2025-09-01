@@ -32,19 +32,37 @@ from pyteomics.mass import std_aa_mass as AMINO_ACID_MASSES
 # --- Masses for Fragmentation ---
 # Monoisotopic masses of amino acid residues from pyteomics.mass
 
-# Mass of water and ammonia for fragment ion calculation. Using monoisotopic masses.
-# H = 1.007825, O = 15.994915, N = 14.003074
+# Mass of water, ammonia, and carbon monoxide for fragment ion calculation.
+# Using monoisotopic masses.
+# H = 1.007825, O = 15.994915, N = 14.003074, C = 12.000000
 H2O_MASS = 18.010565
 NH3_MASS = 17.026549
+CO_MASS = 27.994915
 
 # Mass modifications for different fragment ion types.
 # These values are added to the sum of residue masses of the fragment.
 # This gives the mass of the neutral fragment.
 FRAGMENT_ION_MODIFICATIONS = {
     # N-terminal ions
+    'a': -CO_MASS,
     'b': 0.0,
     'c': NH3_MASS,
     # C-terminal ions
+    'x': CO_MASS,
     'y': H2O_MASS,
     'z': H2O_MASS - NH3_MASS,
+}
+
+# Amino acids prone to neutral loss events.
+# The keys are the single-letter amino acid codes, and the values are a list
+# of mass losses (e.g., H2O, NH3) that can occur.
+NEUTRAL_LOSS_RULES = {
+    'S': [H2O_MASS],  # Serine -> loss of water
+    'T': [H2O_MASS],  # Threonine -> loss of water
+    'D': [H2O_MASS],  # Aspartic Acid -> loss of water
+    'E': [H2O_MASS],  # Glutamic Acid -> loss of water
+    'N': [NH3_MASS],  # Asparagine -> loss of ammonia
+    'Q': [NH3_MASS],  # Glutamine -> loss of ammonia
+    'K': [NH3_MASS],  # Lysine -> loss of ammonia
+    'R': [NH3_MASS],  # Arginine -> loss of ammonia
 }
