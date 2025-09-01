@@ -14,6 +14,7 @@ from ..core.constants import DISULFIDE_MASS_LOSS
 from .simulation import execute_simulation_and_write_mzml
 from ..config import AntibodySimConfig, SpectrumGeneratorConfig
 from .retention_time import KYTE_DOOLITTLE
+from .ptm import calculate_ptm_mass_shift
 
 
 def calculate_assembly_properties(chains: list[dict], assemblies: list[dict]) -> list[dict]:
@@ -45,6 +46,12 @@ def calculate_assembly_properties(chains: list[dict], assemblies: list[dict]) ->
                     final_sequence = final_sequence[:-1]
 
                 chain_mass = mass.calculate_mass(sequence=final_sequence, average=True)
+
+                # Apply stochastic PTMs
+                ptm_configs = chain.get('ptms', [])
+                if ptm_configs:
+                    ptm_mass_shift = calculate_ptm_mass_shift(final_sequence, ptm_configs)
+                    chain_mass += ptm_mass_shift
 
                 if pyro_glu and (original_sequence.startswith('E') or original_sequence.startswith('Q')):
                     chain_mass -= water_mass_loss

@@ -14,6 +14,21 @@ This application generates simulated mass spectrometry data (`.mzML` files) for 
 - **Mass Inhomogeneity:** Simulate protein conformational broadening by defining a standard deviation for the average protein mass.
 - **EMG Peak Shape:** Model more realistic chromatographic profiles by applying an Exponentially Modified Gaussian (EMG) shape with a configurable tailing factor.
 - **1/f Noise:** Optionally add an extra layer of `1/f` (pink) noise for more realistic electronic noise simulation.
+- **Post-Translational Modifications (PTMs):** Stochastically apply common PTMs like oxidation or deamidation to protein and peptide sequences.
+
+### Post-Translational Modification (PTM) Simulation
+
+This feature allows for the stochastic application of post-translational modifications to protein sequences, adding another layer of realism to the simulated data. The PTMs are defined by their mass shift, the target amino acid residue, and the probability of the modification occurring at any given site.
+
+This functionality is available in the **Antibody Simulation** tab.
+
+**Configuration:**
+
+In the **Antibody Simulation** tab, each chain has a "PTMs..." button, which opens a dedicated editor to configure PTMs for that specific chain. This allows for different modifications to be applied to heavy and light chains, for example.
+
+For each PTM, you can configure:
+*   **Enabled**: A checkbox to turn the simulation of this PTM on or off.
+*   **Probability**: A value from 0.0 to 1.0 representing the chance that the modification will occur on any given target residue. For example, a probability of 0.25 means that each target residue has a 25% chance of being modified.
 
 ## Simulation Modules
 
