@@ -1,6 +1,8 @@
 import math
 import multiprocessing
 import itertools
+from dataclasses import dataclass, field
+from typing import List
 import numpy as np
 import numba
 
@@ -9,6 +11,7 @@ from .constants import (BASE_INTENSITY_SCALAR, FWHM_TO_SIGMA, MZ_SCALE_FACTOR,
 from .isotopes import isotope_calculator
 from .peptide_isotopes import peptide_isotope_calculator
 from ..logic.fragmentation import generate_fragment_ions
+from .types import FragmentationEvent
 
 
 @numba.jit(nopython=True, fastmath=True)

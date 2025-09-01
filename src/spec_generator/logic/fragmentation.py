@@ -1,13 +1,16 @@
 """
 This module provides functions for generating fragment ions from peptide sequences.
 """
+from dataclasses import dataclass
 from typing import Optional
+
 from ..core.constants import (
     AMINO_ACID_MASSES,
     FRAGMENT_ION_MODIFICATIONS,
     NEUTRAL_LOSS_RULES,
     PROTON_MASS,
 )
+from ..core.types import Spectrum, FragmentationEvent
 
 
 def _calculate_prefix_masses(
@@ -160,3 +163,45 @@ def generate_fragment_ions(
             )
 
     return sorted(set(fragment_mzs))
+
+
+def generate_fragmentation_events(
+    sequence: str,
+    precursor_charge: int,
+    ion_types: list[str],
+    fragment_charges: list[int],
+    rt: float,
+    precursor_intensity: float,
+) -> list[FragmentationEvent]:
+    """
+    Generates a list of fragmentation events for a peptide.
+    """
+    if not sequence:
+        return []
+
+    # For now, generate one event per precursor
+    fragment_mzs = generate_fragment_ions(
+        sequence, ion_types, fragment_charges
+    )
+
+    # Dummy intensities for now
+    fragment_intensities = [100.0] * len(fragment_mzs)
+
+    # Calculate precursor m/z
+    total_mass = sum(AMINO_ACID_MASSES.get(aa, 0.0) for aa in sequence)
+    precursor_mz = (total_mass + precursor_charge * PROTON_MASS) / precursor_charge
+
+    fragments = Spectrum(
+        mz=fragment_mzs,
+        intensity=fragment_intensities,
+    )
+
+    event = FragmentationEvent(
+        precursor_mz=precursor_mz,
+        precursor_charge=precursor_charge,
+        rt=rt,
+        intensity=precursor_intensity,
+        fragments=fragments,
+    )
+
+    return [event]

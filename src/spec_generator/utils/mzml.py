@@ -3,8 +3,12 @@ import copy
 import hashlib
 import xml.etree.ElementTree as ET
 import zlib
+from typing import List, Optional
 
 import numpy as np
+
+from ..core.types import MSMSSpectrum
+from ..core.types import FragmentationEvent
 
 
 def encode_floats(float_array: np.ndarray) -> str:
@@ -19,6 +23,7 @@ def create_mzml_content_et(
     run_data: list[list[np.ndarray]],
     scan_interval: float,
     progress_callback=None,
+    msms_spectra: Optional[List[MSMSSpectrum]] = None,
 ) -> bytes | None:
     """
     Creates the full mzML file content as a byte string using xml.etree.ElementTree.
@@ -37,6 +42,8 @@ def create_mzml_content_et(
         num_proteins = len(run_data)
         num_scans_per_protein = len(run_data[0])
         total_spectra_count = num_proteins * num_scans_per_protein
+        if msms_spectra:
+            total_spectra_count += len(msms_spectra)
         scan_times = [i * scan_interval for i in range(num_scans_per_protein)]
 
         # --- Boilerplate XML Setup ---
@@ -132,6 +139,94 @@ def create_mzml_content_et(
                 spectrum_list.append(spec)
                 spectrum_index += 1
                 native_id_counter += 1
+
+        # --- MS2 Spectra Loop ---
+        if msms_spectra:
+            # --- MS2 Spectrum Template ---
+            ms2_spec_template = ET.Element("spectrum", defaultArrayLength="0")
+            ET.SubElement(ms2_spec_template, "cvParam", cvRef="MS", accession="MS:1000580", name="MSn spectrum")
+            ET.SubElement(ms2_spec_template, "cvParam", cvRef="MS", accession="MS:1000511", name="ms level", value="2")
+            ET.SubElement(ms2_spec_template, "cvParam", cvRef="MS", accession="MS:1000130", name="positive scan")
+            ET.SubElement(ms2_spec_template, "cvParam", cvRef="MS", accession="MS:1000127", name="centroid spectrum") # MS2 are centroided
+            ET.SubElement(ms2_spec_template, "cvParam", cvRef="MS", accession="MS:1000504", name="base peak m/z", value="", unitCvRef="MS", unitAccession="MS:1000040", unitName="m/z")
+            ET.SubElement(ms2_spec_template, "cvParam", cvRef="MS", accession="MS:1000505", name="base peak intensity", value="", unitCvRef="MS", unitAccession="MS:1000131", unitName="number of detector counts")
+            ET.SubElement(ms2_spec_template, "cvParam", cvRef="MS", accession="MS:1000285", name="total ion current", value="")
+
+            scan_list_template_ms2 = ET.SubElement(ms2_spec_template, "scanList", count="1")
+            ET.SubElement(scan_list_template_ms2, "cvParam", cvRef="MS", accession="MS:1000795", name="no combination")
+            scan_template_ms2 = ET.SubElement(scan_list_template_ms2, "scan")
+            ET.SubElement(scan_template_ms2, "cvParam", cvRef="MS", accession="MS:1000016", name="scan start time", value="", unitCvRef="UO", unitAccession="UO:0000031", unitName="minute")
+
+            precursor_list_template = ET.SubElement(ms2_spec_template, "precursorList", count="1")
+            precursor_template = ET.SubElement(precursor_list_template, "precursor")
+
+            isolation_window_template = ET.SubElement(precursor_template, "isolationWindow")
+            ET.SubElement(isolation_window_template, "cvParam", cvRef="MS", accession="MS:1000827", name="isolation window target m/z", value="", unitCvRef="MS", unitAccession="MS:1000040", unitName="m/z")
+
+            selected_ion_list_template = ET.SubElement(precursor_template, "selectedIonList", count="1")
+            selected_ion_template = ET.SubElement(selected_ion_list_template, "selectedIon")
+            ET.SubElement(selected_ion_template, "cvParam", cvRef="MS", accession="MS:1000744", name="selected ion m/z", value="", unitCvRef="MS", unitAccession="MS:1000040", unitName="m/z")
+            ET.SubElement(selected_ion_template, "cvParam", cvRef="MS", accession="MS:1000041", name="charge state", value="")
+
+            activation_template = ET.SubElement(precursor_template, "activation")
+            ET.SubElement(activation_template, "cvParam", cvRef="MS", accession="MS:1000133", name="collision-induced dissociation", value="") # Default activation
+
+            bdal_template_ms2 = ET.SubElement(ms2_spec_template, "binaryDataArrayList", count="2")
+            bda_mz_template_ms2 = ET.SubElement(bdal_template_ms2, "binaryDataArray", encodedLength="0")
+            ET.SubElement(bda_mz_template_ms2, "cvParam", cvRef="MS", accession="MS:1000514", name="m/z array", unitCvRef="MS", unitAccession="MS:1000040", unitName="m/z")
+            ET.SubElement(bda_mz_template_ms2, "cvParam", cvRef="MS", accession="MS:1000523", name="64-bit float")
+            ET.SubElement(bda_mz_template_ms2, "cvParam", cvRef="MS", accession="MS:1000574", name="zlib compression")
+            ET.SubElement(bda_mz_template_ms2, "binary").text = ""
+
+            bda_int_template_ms2 = ET.SubElement(bdal_template_ms2, "binaryDataArray", encodedLength="0")
+            ET.SubElement(bda_int_template_ms2, "cvParam", cvRef="MS", accession="MS:1000515", name="intensity array", unitCvRef="MS", unitAccession="MS:1000131", unitName="number of detector counts")
+            ET.SubElement(bda_int_template_ms2, "cvParam", cvRef="MS", accession="MS:1000523", name="64-bit float")
+            ET.SubElement(bda_int_template_ms2, "cvParam", cvRef="MS", accession="MS:1000574", name="zlib compression")
+            ET.SubElement(bda_int_template_ms2, "binary").text = ""
+
+            for msms_scan in msms_spectra:
+                for event in msms_scan.fragmentation_events:
+                    spec = copy.deepcopy(ms2_spec_template)
+                    spec.set("index", str(spectrum_index))
+                    spec.set("id", f"scan={native_id_counter}")
+                    spec.set("defaultArrayLength", str(len(event.fragments.mz)))
+
+                    # Precursor info
+                    precursor = spec.find("precursorList/precursor")
+                    precursor.find("isolationWindow/cvParam[@accession='MS:1000827']").set("value", str(event.precursor_mz))
+                    selected_ion = precursor.find("selectedIonList/selectedIon")
+                    selected_ion.find("cvParam[@accession='MS:1000744']").set("value", str(event.precursor_mz))
+                    selected_ion.find("cvParam[@accession='MS:1000041']").set("value", str(event.precursor_charge))
+
+                    # Scan info
+                    scan = spec.find("scanList/scan")
+                    scan.set("id", f"scan={native_id_counter}")
+                    scan.find(".//*[@accession='MS:1000016']").set('value', str(event.rt / 60.0)) # convert to minutes
+
+                    # Binary data
+                    mz_binary = encode_floats(event.fragments.mz)
+                    intensity_binary = encode_floats(event.fragments.intensity)
+
+                    bda_mz = spec.find("binaryDataArrayList/binaryDataArray[1]")
+                    bda_mz.set("encodedLength", str(len(mz_binary)))
+                    bda_mz.find("binary").text = mz_binary
+
+                    bda_int = spec.find("binaryDataArrayList/binaryDataArray[2]")
+                    bda_int.set("encodedLength", str(len(intensity_binary)))
+                    bda_int.find("binary").text = intensity_binary
+
+                    # Spectrum stats
+                    base_peak_intensity = np.max(event.fragments.intensity) if event.fragments.intensity.size > 0 else 0.0
+                    base_peak_mz = event.fragments.mz[np.argmax(event.fragments.intensity)] if base_peak_intensity > 0 else 0.0
+                    total_ion_current = np.sum(event.fragments.intensity)
+
+                    spec.find(".//*[@accession='MS:1000504']").set('value', str(base_peak_mz))
+                    spec.find(".//*[@accession='MS:1000505']").set('value', str(base_peak_intensity))
+                    spec.find(".//*[@accession='MS:1000285']").set('value', str(total_ion_current))
+
+                    spectrum_list.append(spec)
+                    spectrum_index += 1
+                    native_id_counter += 1
 
         # --- Finalization ---
         # The SHA-1 checksum must be calculated on the XML *before* the checksum tag is added.

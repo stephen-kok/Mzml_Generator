@@ -43,6 +43,7 @@ class SpectrumGeneratorConfig:
     intensity_scalars: List[float]
     mass_inhomogeneity: float
     hydrophobicity_scores: List[float] | None = None
+    peptide_sequences: List[str] | None = None
 
 @dataclass
 class CovalentBindingConfig:
