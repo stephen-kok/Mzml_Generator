@@ -55,7 +55,7 @@ def execute_binding_simulation(
             seed=common.seed,
             noise_option=common.noise_option,
             pink_noise_enabled=common.pink_noise_enabled,
-            update_queue=None
+            progress_callback=None
         )
 
         # 3. Create mzML content
@@ -63,7 +63,7 @@ def execute_binding_simulation(
             mz_range=mz_range,
             run_data=[final_spectra], # Wrap in list for mzML writer
             scan_interval=lc.scan_interval,
-            update_queue=None
+            progress_callback=None
         )
         if not mzml_content:
             return False, ""

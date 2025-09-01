@@ -54,8 +54,7 @@ class TestPeptideMapSimulation(unittest.TestCase):
         # We don't have a queue in the test environment, so we pass None
         success = execute_peptide_map_simulation(
             config=config,
-            final_filepath=output_filepath,
-            update_queue=None
+            final_filepath=output_filepath
         )
 
         # 1. Check that the simulation reports success
@@ -87,7 +86,6 @@ class TestPeptideMapSimulation(unittest.TestCase):
         result = execute_peptide_map_simulation(
             config=config,
             final_filepath="",
-            update_queue=None,
             return_data_only=True
         )
 
@@ -125,7 +123,7 @@ class TestPeptideMapSimulation(unittest.TestCase):
         )
 
         mz_range, final_scans = execute_peptide_map_simulation(
-            config=config, final_filepath="", update_queue=None, return_data_only=True
+            config=config, final_filepath="", return_data_only=True
         )
 
         # Combine all scans to get the total signal
@@ -165,7 +163,7 @@ class TestPeptideMapSimulation(unittest.TestCase):
         )
 
         mz_range, final_scans = execute_peptide_map_simulation(
-            config=config, final_filepath="", update_queue=None, return_data_only=True
+            config=config, final_filepath="", return_data_only=True
         )
 
         total_signal = np.sum(final_scans, axis=0)
@@ -221,7 +219,7 @@ class TestPeptideMapSimulation(unittest.TestCase):
 
         # 1. Get the result from the parallel implementation
         mz_range_parallel, final_scans_parallel = execute_peptide_map_simulation(
-            config=config, final_filepath="", update_queue=None, return_data_only=True
+            config=config, final_filepath="", return_data_only=True
         )
 
         # 2. Manually run the sequential logic to get the expected result

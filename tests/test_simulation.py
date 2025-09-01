@@ -47,7 +47,6 @@ class TestSimulation(unittest.TestCase):
         result = execute_simulation_and_write_mzml(
             config=self.default_config,
             final_filepath=os.path.join(self.test_dir, "test.mzML"),
-            update_queue=None,
             return_data_only=True
         )
         self.assertIsInstance(result, tuple)
@@ -71,7 +70,6 @@ class TestSimulation(unittest.TestCase):
         _, spectra_inhomogeneity = execute_simulation_and_write_mzml(
             config=config_inhomogeneity,
             final_filepath=os.path.join(self.test_dir, "test_inhomogeneity.mzML"),
-            update_queue=None,
             return_data_only=True
         )
 
@@ -81,7 +79,6 @@ class TestSimulation(unittest.TestCase):
         _, spectra_no_inhomogeneity = execute_simulation_and_write_mzml(
             config=config_no_inhomogeneity,
             final_filepath=os.path.join(self.test_dir, "test_no_inhomogeneity.mzML"),
-            update_queue=None,
             return_data_only=True
         )
 
@@ -92,7 +89,7 @@ class TestSimulation(unittest.TestCase):
         config = copy.deepcopy(self.default_config)
         config.protein_masses = [-100]
         # execute_simulation_and_write_mzml returns False on validation error, it doesn't raise
-        result = execute_simulation_and_write_mzml(config, "test.mzML", None)
+        result = execute_simulation_and_write_mzml(config, "test.mzML")
         self.assertFalse(result)
 
     def test_file_is_created(self):
@@ -100,7 +97,6 @@ class TestSimulation(unittest.TestCase):
         success = execute_simulation_and_write_mzml(
             config=self.default_config,
             final_filepath=filepath,
-            update_queue=None,
             return_data_only=False
         )
         self.assertTrue(success)
@@ -114,7 +110,6 @@ class TestSimulation(unittest.TestCase):
         mz_range, spectra = execute_simulation_and_write_mzml(
             config=self.default_config,
             final_filepath=os.path.join(self.test_dir, "test.mzML"),
-            update_queue=None,
             return_data_only=True
         )
         spectrum = spectra[0][0] # First protein, first scan
@@ -156,7 +151,7 @@ class TestSimulation(unittest.TestCase):
 
         # 1. Get the result from the parallel implementation
         mz_range_parallel, spectra_parallel = execute_simulation_and_write_mzml(
-            config=config, final_filepath="", update_queue=None, return_data_only=True
+            config=config, final_filepath="", return_data_only=True
         )
 
         # 2. Manually run the sequential logic to get the expected result
@@ -192,7 +187,7 @@ class TestSimulation(unittest.TestCase):
             mz_range=mz_range_seq, all_clean_spectra=all_clean_spectra_seq, num_scans=lc.num_scans,
             gaussian_std_dev=lc.gaussian_std_dev, lc_tailing_factor=lc.lc_tailing_factor,
             seed=common.seed, noise_option=common.noise_option, pink_noise_enabled=common.pink_noise_enabled,
-            apex_scans=None, update_queue=None
+            apex_scans=None, progress_callback=None
         )
 
         # 3. Compare the results

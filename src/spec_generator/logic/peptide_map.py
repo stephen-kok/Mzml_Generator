@@ -1,7 +1,6 @@
 """
 This module orchestrates the full peptide map simulation process.
 """
-import queue
 import numpy as np
 from pyteomics import mass
 import multiprocessing
@@ -58,40 +57,35 @@ def _generate_spectrum_for_peptide_worker(
 def execute_peptide_map_simulation(
     config: PeptideMapSimConfig,
     final_filepath: str,
-    update_queue: queue.Queue | None,
+    progress_callback=None,
     return_data_only: bool = False
 ):
     """
     Orchestrates the full peptide map simulation.
     """
+    progress_callback = progress_callback or (lambda *args: None)
     try:
-        if update_queue:
-            update_queue.put(('log', "Starting peptide map simulation...\n"))
-            update_queue.put(('progress_set', 5))
+        progress_callback('log', "Starting peptide map simulation...\n")
+        progress_callback('progress_set', 5)
 
         # 1. Digestion
-        if update_queue:
-            update_queue.put(('log', f"Performing in-silico digestion of sequence...\n"))
+        progress_callback('log', f"Performing in-silico digestion of sequence...\n")
         peptides = digest_sequence(
             config.sequence,
             missed_cleavages=config.missed_cleavages
         )
-        if update_queue:
-            update_queue.put(('log', f"Generated {len(peptides)} unique peptides.\n"))
-            update_queue.put(('progress_set', 15))
+        progress_callback('log', f"Generated {len(peptides)} unique peptides.\n")
+        progress_callback('progress_set', 15)
 
         # 2. Retention Time Prediction
-        if update_queue:
-            update_queue.put(('log', "Predicting retention times...\n"))
+        progress_callback('log', "Predicting retention times...\n")
         retention_times = predict_retention_times(peptides, total_run_time_minutes=config.lc.run_time)
-        if update_queue:
-            update_queue.put(('progress_set', 25))
+        progress_callback('progress_set', 25)
 
         # 3. Generate Base Spectra for all peptides
-        if update_queue:
-            update_queue.put(
-                ("log", f"Generating base spectra for {len(peptides)} peptides (in parallel)...\n")
-            )
+        progress_callback(
+            "log", f"Generating base spectra for {len(peptides)} peptides (in parallel)...\n"
+        )
 
         mz_range = np.arange(
             config.common.mz_range_start,
@@ -115,12 +109,10 @@ def execute_peptide_map_simulation(
             {"sequence": peptide, "rt": retention_times[peptide], "spectrum": spectrum}
             for peptide, spectrum in results
         ]
-        if update_queue:
-            update_queue.put(('progress_set', 45))
+        progress_callback('progress_set', 45)
 
         # 4. Construct Chromatogram
-        if update_queue:
-            update_queue.put(('log', "Constructing chromatogram...\n"))
+        progress_callback('log', "Constructing chromatogram...\n")
 
         scan_interval_minutes = config.lc.scan_interval / 60.0
         num_scans = int(config.lc.run_time / scan_interval_minutes)
@@ -144,13 +136,11 @@ def execute_peptide_map_simulation(
                 if 0 <= scan_idx < num_scans:
                     final_scans[scan_idx] += p_data["spectrum"] * lc_shape[i]
 
-        if update_queue:
-            update_queue.put(('progress_set', 70))
+        progress_callback('progress_set', 70)
 
         # 5. Add Noise
         if config.common.noise_option != "No Noise":
-            if update_queue:
-                update_queue.put(('log', "Adding noise...\n"))
+            progress_callback('log', "Adding noise...\n")
             noise_params = noise_presets.get(config.common.noise_option)
             if noise_params:
                 # Find a global max intensity for noise calculation
@@ -165,8 +155,7 @@ def execute_peptide_map_simulation(
                         **noise_params
                     )
 
-        if update_queue:
-            update_queue.put(('progress_set', 85))
+        progress_callback('progress_set', 85)
 
         # 6. Write mzML
         if return_data_only:
@@ -176,22 +165,20 @@ def execute_peptide_map_simulation(
             mz_range=mz_range,
             run_data=[final_scans], # Wrap in another list as expected by writer
             scan_interval=scan_interval_minutes,
-            update_queue=update_queue
+            progress_callback=progress_callback
         )
 
         if mzml_bytes:
             with open(final_filepath, 'wb') as f:
                 f.write(mzml_bytes)
-            if update_queue:
-                update_queue.put(('log', f"Successfully wrote mzML file to {final_filepath}\n"))
-                update_queue.put(('progress_set', 100))
-                update_queue.put(('finished', ''))
+            progress_callback('log', f"Successfully wrote mzML file to {final_filepath}\n")
+            progress_callback('progress_set', 100)
+            progress_callback('finished', '')
             return True
         else:
             raise ValueError("mzML content generation failed.")
 
     except Exception as e:
-        if update_queue:
-            update_queue.put(('error', f"Peptide map simulation failed: {e}"))
+        progress_callback('error', f"Peptide map simulation failed: {e}")
         print(f"Peptide map simulation failed: {e}")
         return False

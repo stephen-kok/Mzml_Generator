@@ -1,7 +1,6 @@
 import base64
 import copy
 import hashlib
-import queue
 import xml.etree.ElementTree as ET
 import zlib
 
@@ -19,7 +18,7 @@ def create_mzml_content_et(
     mz_range: np.ndarray,
     run_data: list[list[np.ndarray]],
     scan_interval: float,
-    update_queue: queue.Queue | None
+    progress_callback=None,
 ) -> bytes | None:
     """
     Creates the full mzML file content as a byte string using xml.etree.ElementTree.
@@ -27,13 +26,12 @@ def create_mzml_content_et(
     and deep-copying it for each scan, which is much faster than creating each
     element from scratch in a loop.
     """
-    if update_queue:
-        update_queue.put(('log', "Generating mzML structure...\n"))
+    progress_callback = progress_callback or (lambda *args: None)
+    progress_callback('log', "Generating mzML structure...\n")
 
     try:
         if not run_data or not run_data[0]:
-            if update_queue:
-                update_queue.put(('error', "No spectrum data to write to mzML."))
+            progress_callback('error', "No spectrum data to write to mzML.")
             return None
 
         num_proteins = len(run_data)
@@ -147,11 +145,9 @@ def create_mzml_content_et(
         # Final XML bytes with declaration
         final_xml_bytes = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(mzml, encoding='utf-8', method='xml')
 
-        if update_queue:
-            update_queue.put(('log', "mzML structure generated.\n"))
+        progress_callback('log', "mzML structure generated.\n")
         return final_xml_bytes
 
     except Exception as e:
-        if update_queue:
-            update_queue.put(('error', f"Error during mzML content creation: {e}"))
+        progress_callback('error', f"Error during mzML content creation: {e}")
         return None
