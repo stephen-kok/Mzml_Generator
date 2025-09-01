@@ -10,8 +10,9 @@ from ttkbootstrap.constants import PRIMARY
 from ...utils.ui_helpers import Tooltip, parse_float_entry
 from ...config import SpectrumGeneratorConfig
 from .base_tab import BaseTab
-from ..shared_widgets import create_common_parameters_frame, create_lc_simulation_frame
+from ..shared_widgets import create_common_parameters_frame, create_lc_simulation_frame, create_labeled_entry
 from ...logic.spectrum_logic import SpectrumTabLogic
+from .. import constants as C
 
 
 class SpectrumTab(BaseTab):
@@ -32,40 +33,44 @@ class SpectrumTab(BaseTab):
         in_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         in_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(in_frame, text="Protein List File (.txt):").grid(row=0, column=0, sticky="w", pady=5)
-        self.protein_list_file_var = StringVar()
-        self.protein_list_file_entry = ttk.Entry(in_frame, textvariable=self.protein_list_file_var)
-        self.protein_list_file_entry.grid(row=0, column=1, sticky="ew", pady=5, padx=5)
-        Tooltip(self.protein_list_file_entry, "Path to a tab-delimited file with protein data.\nMust contain 'Protein' (Average Mass) and 'Intensity' headers.")
+        self.protein_list_file_var, self.protein_list_file_entry = create_labeled_entry(
+            in_frame,
+            C.PROTEIN_LIST_FILE_LABEL,
+            C.PROTEIN_LIST_FILE_TOOLTIP,
+            grid_row=0, grid_column=0,
+        )
 
-        self.protein_list_browse_button = ttk.Button(in_frame, text="Browse...", command=self.browse_protein_list, style='Outline.TButton')
+        self.protein_list_browse_button = ttk.Button(in_frame, text=C.BROWSE_BUTTON_TEXT, command=self.browse_protein_list, style='Outline.TButton')
         self.protein_list_browse_button.grid(row=0, column=2, sticky="w", pady=5, padx=(5,0))
-        Tooltip(self.protein_list_browse_button, "Browse for a protein list file.")
+        Tooltip(self.protein_list_browse_button, C.BROWSE_PROTEIN_LIST_TOOLTIP)
 
-        self.save_template_button = ttk.Button(in_frame, text="Save as Template...", command=self._save_protein_template, style='Outline.TButton')
+        self.save_template_button = ttk.Button(in_frame, text=C.SAVE_TEMPLATE_BUTTON_TEXT, command=self._save_protein_template, style='Outline.TButton')
         self.save_template_button.grid(row=0, column=3, sticky="w", pady=5, padx=(2,5))
-        Tooltip(self.save_template_button, "Save the manually entered masses and scalars below as a valid\ntab-delimited template file for future use.")
+        Tooltip(self.save_template_button, C.SAVE_TEMPLATE_TOOLTIP)
 
         ttk.Separator(in_frame, orient=HORIZONTAL).grid(row=1, column=0, columnspan=4, sticky="ew", pady=10)
-        ttk.Label(in_frame, text="OR Enter Manually Below", bootstyle="secondary").grid(row=2, column=0, columnspan=4)
+        ttk.Label(in_frame, text=C.MANUAL_INPUT_LABEL, bootstyle="secondary").grid(row=2, column=0, columnspan=4)
 
-        ttk.Label(in_frame, text="Protein Avg. Masses (Da, comma-sep):").grid(row=3, column=0, sticky="w", pady=5)
-        self.spectrum_protein_masses_entry = ttk.Entry(in_frame)
-        self.spectrum_protein_masses_entry.insert(0, "25000")
-        self.spectrum_protein_masses_entry.grid(row=3, column=1, columnspan=3, sticky="ew", pady=5, padx=5)
-        Tooltip(self.spectrum_protein_masses_entry, "A comma-separated list of protein AVERAGE masses to simulate.")
+        self.spectrum_protein_masses_var, self.spectrum_protein_masses_entry = create_labeled_entry(
+            in_frame, C.PROTEIN_MASSES_LABEL,
+            C.PROTEIN_MASSES_TOOLTIP,
+            default_value="25000", grid_row=3
+        )
+        self.spectrum_protein_masses_entry.grid(columnspan=3)
 
-        ttk.Label(in_frame, text="Intensity Scalars (comma-sep):").grid(row=4, column=0, sticky="w", pady=5)
-        self.intensity_scalars_entry = ttk.Entry(in_frame)
-        self.intensity_scalars_entry.insert(0, "1.0")
-        self.intensity_scalars_entry.grid(row=4, column=1, columnspan=3, sticky="ew", pady=5, padx=5)
-        Tooltip(self.intensity_scalars_entry, "A comma-separated list of relative intensity multipliers.\nMust match the number of protein masses.")
+        self.intensity_scalars_var, self.intensity_scalars_entry = create_labeled_entry(
+            in_frame, C.INTENSITY_SCALARS_LABEL,
+            C.INTENSITY_SCALARS_TOOLTIP,
+            default_value="1.0", grid_row=4
+        )
+        self.intensity_scalars_entry.grid(columnspan=3)
 
-        ttk.Label(in_frame, text="Mass Inhomogeneity (Std. Dev., Da):").grid(row=5, column=0, sticky="w", pady=5)
-        self.mass_inhomogeneity_entry = ttk.Entry(in_frame)
-        self.mass_inhomogeneity_entry.insert(0, "0.0")
-        self.mass_inhomogeneity_entry.grid(row=5, column=1, columnspan=3, sticky="ew", pady=5, padx=5)
-        Tooltip(self.mass_inhomogeneity_entry, "Standard deviation of protein mass distribution to simulate conformational broadening.\nSet to 0 to disable. A small value (e.g., 1-5 Da) is recommended.")
+        self.mass_inhomogeneity_var, self.mass_inhomogeneity_entry = create_labeled_entry(
+            in_frame, C.MASS_INHOMOGENEITY_LABEL,
+            C.MASS_INHOMOGENEITY_TOOLTIP,
+            default_value="0.0", grid_row=5
+        )
+        self.mass_inhomogeneity_entry.grid(columnspan=3)
 
     def _create_common_parameters_frame(self):
         common_frame = ttk.Frame(self.content_frame)
@@ -81,17 +86,17 @@ class SpectrumTab(BaseTab):
     def _create_action_buttons_frame(self):
         button_frame = ttk.Frame(self.content_frame)
         button_frame.grid(row=3, column=0, pady=15)
-        self.spectrum_preview_button = ttk.Button(button_frame, text="Preview Spectrum", command=self.preview_spectrum_command, style='Outline.TButton')
+        self.spectrum_preview_button = ttk.Button(button_frame, text=C.PREVIEW_SPECTRUM_BUTTON_TEXT, command=self.preview_spectrum_command, style='Outline.TButton')
         self.spectrum_preview_button.pack(side=LEFT, padx=5)
-        Tooltip(self.spectrum_preview_button, "Generate and display a plot of a single spectrum using the current settings.\nUses the first protein mass if multiple are entered.")
+        Tooltip(self.spectrum_preview_button, C.PREVIEW_SPECTRUM_TOOLTIP)
 
-        self.plot_button = ttk.Button(button_frame, text="Generate & Plot", command=self.generate_and_plot_command, style='Outline.TButton')
+        self.plot_button = ttk.Button(button_frame, text=C.GENERATE_PLOT_BUTTON_TEXT, command=self.generate_and_plot_command, style='Outline.TButton')
         self.plot_button.pack(side=LEFT, padx=5)
-        Tooltip(self.plot_button, "Generate the spectrum and view it in the 'Plot Viewer' tab without saving a file.")
+        Tooltip(self.plot_button, C.GENERATE_PLOT_TOOLTIP)
 
-        self.spectrum_generate_button = ttk.Button(button_frame, text="Generate mzML File(s)", command=self.generate_spectrum_command, bootstyle=PRIMARY)
+        self.spectrum_generate_button = ttk.Button(button_frame, text=C.GENERATE_MZML_BUTTON_TEXT, command=self.generate_spectrum_command, bootstyle=PRIMARY)
         self.spectrum_generate_button.pack(side=LEFT, padx=5)
-        Tooltip(self.spectrum_generate_button, "Generate and save .mzML file(s) with the specified parameters.")
+        Tooltip(self.spectrum_generate_button, C.GENERATE_MZML_TOOLTIP)
 
     def _create_progress_and_output_frame(self):
         self.progress_bar = ttk.Progressbar(self.content_frame, orient=HORIZONTAL, mode="determinate")
@@ -118,9 +123,9 @@ class SpectrumTab(BaseTab):
             "common": common,
             "lc": lc,
             "protein_list_file": self.protein_list_file_var.get() or None,
-            "protein_masses_str": self.spectrum_protein_masses_entry.get(),
-            "intensity_scalars_str": self.intensity_scalars_entry.get(),
-            "mass_inhomogeneity_str": self.mass_inhomogeneity_entry.get(),
+            "protein_masses_str": self.spectrum_protein_masses_var.get(),
+            "intensity_scalars_str": self.intensity_scalars_var.get(),
+            "mass_inhomogeneity_str": self.mass_inhomogeneity_var.get(),
         }
 
     def _save_protein_template(self):
@@ -133,30 +138,28 @@ class SpectrumTab(BaseTab):
             )
 
             filepath = filedialog.asksaveasfilename(
-                title="Save Protein List Template",
-                initialfile="protein_list_template.txt",
+                title=C.SAVE_TEMPLATE_TITLE,
+                initialfile=C.PROTEIN_LIST_TEMPLATE_FILENAME,
                 defaultextension=".txt",
-                filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
+                filetypes=C.FILE_TYPES
             )
             if not filepath:
                 return
 
-            with open(filepath, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f, delimiter='\t')
-                writer.writerow(['Protein', 'Intensity'])
-                writer.writerows(zip(masses, scalars))
+            self.logic.save_protein_template(filepath, masses, scalars)
 
             self.task_queue.put(('log', f"Saved template to {os.path.basename(filepath)}\n"))
             self.protein_list_file_var.set(filepath)
         except ValueError as e:
-             messagebox.showerror("Error", str(e))
+             messagebox.showerror(C.INVALID_INPUT_ERROR_TITLE, str(e))
         except Exception as e:
-            messagebox.showerror("Save Error", f"Could not save template file.\nError: {e}")
+            messagebox.showerror(C.SAVE_ERROR_TITLE, C.SAVE_ERROR_MESSAGE.format(e))
 
     def _toggle_protein_inputs(self, *args):
         state = DISABLED if self.protein_list_file_var.get() else NORMAL
         self.spectrum_protein_masses_entry.config(state=state)
         self.intensity_scalars_entry.config(state=state)
+        self.mass_inhomogeneity_entry.config(state=state)
 
     def browse_protein_list(self):
         filepath = filedialog.askopenfilename(filetypes=[("Text files", "*.txt;*.tsv")], initialdir=os.getcwd())
@@ -171,7 +174,7 @@ class SpectrumTab(BaseTab):
             config_dict = self._gather_config()
             self.logic.generate_spectrum(config_dict, self.task_queue)
         except ValueError as e:
-            self.task_queue.put(('error', f"Invalid input: {e}"))
+            self.task_queue.put(('error', C.INVALID_INPUT_ERROR.format(e)))
             self.on_task_done()
 
     def preview_spectrum_command(self):
@@ -181,10 +184,10 @@ class SpectrumTab(BaseTab):
             # Run the preview logic in a separate thread to avoid blocking the GUI
             threading.Thread(target=self.logic.preview_spectrum, args=(config_dict, self.task_queue), daemon=True).start()
         except ValueError as e:
-            self.task_queue.put(('error', f"Invalid input for preview: {e}"))
+            self.task_queue.put(('error', C.INVALID_PREVIEW_INPUT_ERROR.format(e)))
             self.on_preview_done()
         except Exception as e:
-            self.task_queue.put(('error', f"An unexpected error occurred: {e}"))
+            self.task_queue.put(('error', C.UNEXPECTED_ERROR_MESSAGE.format(e)))
             self.on_preview_done()
 
     def generate_and_plot_command(self):
@@ -192,12 +195,12 @@ class SpectrumTab(BaseTab):
         try:
             config_dict = self._gather_config()
             if config_dict.get("protein_list_file"):
-                messagebox.showwarning("Warning", "Plotting is only available for manually entered proteins, not for file-based batch processing.")
+                messagebox.showwarning(C.PLOT_WARNING_TITLE, C.PLOT_WARNING_MESSAGE)
                 self.on_plot_done()
                 return
             self.logic.start_plot_generation(config_dict, self.task_queue, self._handle_plot_result)
         except ValueError as e:
-            self.task_queue.put(('error', f"Invalid input: {e}"))
+            self.task_queue.put(('error', C.INVALID_INPUT_ERROR.format(e)))
             self.on_plot_done()
 
     def _handle_plot_result(self, result):

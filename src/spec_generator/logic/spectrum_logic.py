@@ -54,6 +54,13 @@ class SpectrumTabLogic:
 
         return masses, scalars
 
+    def save_protein_template(self, filepath, masses, scalars):
+        """Saves the protein list to a tab-delimited file."""
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(['Protein', 'Intensity'])
+            writer.writerows(zip(masses, scalars))
+
     def generate_spectrum(self, config_dict: dict, task_queue):
         try:
             config = self.validate_and_prepare_config(config_dict, task_queue)

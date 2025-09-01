@@ -7,6 +7,23 @@ from ttkbootstrap import widgets as ttk
 from ..core.constants import noise_presets
 from ..utils.ui_helpers import Tooltip
 
+def create_labeled_entry(parent, label_text, tooltip_text, default_value="", entry_width=None, grid_row=0, grid_column=0, sticky="ew", pady=5, padx=5):
+    """
+    Creates a label, an entry widget, and a tooltip, and grids them in the parent frame.
+
+    Returns the StringVar associated with the entry widget.
+    """
+    ttk.Label(parent, text=label_text).grid(row=grid_row, column=grid_column, sticky="w", pady=pady)
+
+    entry_var = StringVar(value=default_value)
+    entry = ttk.Entry(parent, textvariable=entry_var, width=entry_width)
+    entry.grid(row=grid_row, column=grid_column + 1, sticky=sticky, pady=pady, padx=padx)
+
+    Tooltip(entry, tooltip_text)
+
+    return entry_var, entry
+
+
 def _browse_directory_for_var(string_var: StringVar):
     """
     Opens a directory browser and sets the selected path to a StringVar.
