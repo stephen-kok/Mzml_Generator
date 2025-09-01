@@ -8,7 +8,7 @@ from .constants import (BASE_INTENSITY_SCALAR, FWHM_TO_SIGMA, MZ_SCALE_FACTOR,
                         PROTON_MASS)
 from .isotopes import isotope_calculator
 from .peptide_isotopes import peptide_isotope_calculator
-from pyteomics import mass
+from ..logic.fragmentation import generate_fragment_ions
 
 
 @numba.jit(nopython=True, fastmath=True)
@@ -249,3 +249,53 @@ def generate_binding_spectrum(
 
     # Sum the results
     return np.sum(results, axis=0)
+
+
+def generate_fragment_spectrum(
+    peptide_sequence: str,
+    mz_range: np.ndarray,
+    peak_sigma_mz_float: float,
+    intensity_scalar: float,
+    resolution: float,
+    ion_types: list[str],
+    fragment_charges: list[int],
+) -> np.ndarray:
+    """
+    Generates a tandem mass spectrum for a peptide, including specified fragment ions.
+    """
+    # Generate the m/z values for all requested fragment ions
+    fragment_mzs = generate_fragment_ions(
+        sequence=peptide_sequence,
+        ion_types=ion_types,
+        charges=fragment_charges,
+    )
+
+    if not fragment_mzs:
+        return np.zeros_like(mz_range)
+
+    # For now, we are not calculating full isotopic distributions for fragments.
+    # We will treat each fragment as a single peak.
+    peak_mzs = np.array(fragment_mzs)
+
+    # Filter for peaks within the visible m/z range
+    visible_mask = (peak_mzs >= mz_range[0]) & (peak_mzs <= mz_range[-1])
+    if not np.any(visible_mask):
+        return np.zeros_like(mz_range)
+
+    visible_mzs = peak_mzs[visible_mask]
+    # For now, assign a base intensity to all fragment peaks
+    # A more sophisticated model could vary this
+    visible_intensities = np.full_like(visible_mzs, BASE_INTENSITY_SCALAR * intensity_scalar)
+
+    # Calculate sigma for each peak based on its m/z
+    sigma_intrinsic = peak_sigma_mz_float * (visible_mzs / MZ_SCALE_FACTOR)
+    if resolution > 0:
+        sigma_resolution = (visible_mzs / resolution) / FWHM_TO_SIGMA
+        visible_sigmas = np.sqrt(sigma_intrinsic**2 + sigma_resolution**2)
+    else:
+        visible_sigmas = sigma_intrinsic
+
+    # Call the optimized Numba function to build the final spectrum
+    return _build_spectrum_from_peaks_numba(
+        mz_range, visible_mzs, visible_intensities, visible_sigmas
+    )

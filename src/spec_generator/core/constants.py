@@ -25,3 +25,26 @@ noise_presets = {
 # Mass of two hydrogen atoms, lost during the formation of one disulfide bond.
 # Using average mass of H (~1.008 Da) -> 2 * H = 2.016 Da
 DISULFIDE_MASS_LOSS = 2.016
+
+
+from pyteomics.mass import std_aa_mass as AMINO_ACID_MASSES
+
+# --- Masses for Fragmentation ---
+# Monoisotopic masses of amino acid residues from pyteomics.mass
+
+# Mass of water and ammonia for fragment ion calculation. Using monoisotopic masses.
+# H = 1.007825, O = 15.994915, N = 14.003074
+H2O_MASS = 18.010565
+NH3_MASS = 17.026549
+
+# Mass modifications for different fragment ion types.
+# These values are added to the sum of residue masses of the fragment.
+# This gives the mass of the neutral fragment.
+FRAGMENT_ION_MODIFICATIONS = {
+    # N-terminal ions
+    'b': 0.0,
+    'c': NH3_MASS,
+    # C-terminal ions
+    'y': H2O_MASS,
+    'z': H2O_MASS - NH3_MASS,
+}
