@@ -98,8 +98,9 @@ class PlotViewerTab(ttk.Frame):
         self.fig.patch.set_facecolor(self.style.colors.bg)
         if self.toolbar:
             self.toolbar.config(background=self.style.colors.bg)
-            for button in self.toolbar.winfo_children():
-                button.config(background=self.style.colors.bg, foreground=self.style.colors.fg)
+            for widget in self.toolbar.winfo_children():
+                if isinstance(widget, (tk.Button, tk.Checkbutton, tk.Label)):
+                    widget.config(background=self.style.colors.bg, foreground=self.style.colors.fg)
 
         if hasattr(self, 'crosshair_text'):
             self.crosshair_text.get_bbox_patch().set_facecolor(self.style.colors.inputbg)
