@@ -2,13 +2,14 @@
 This module provides functions for generating fragment ions from peptide sequences.
 """
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Tuple
 
 from ..core.constants import (
     AMINO_ACID_MASSES,
     FRAGMENT_ION_MODIFICATIONS,
     NEUTRAL_LOSS_RULES,
     PROTON_MASS,
+    FRAGMENTATION_ENHANCEMENT_RULES,
 )
 from ..core.types import Spectrum, FragmentationEvent
 
@@ -53,9 +54,9 @@ def _calculate_suffix_masses(
 
 def _generate_n_terminal_ions(
     sequence: str, prefix_masses: list[float], ion_type: str, charges: list[int]
-) -> list[float]:
+) -> List[Tuple[float, float]]:
     """Generates m/z values for N-terminal ions (a, b, c), including neutral losses."""
-    fragment_mzs = []
+    fragments = []
     modification = FRAGMENT_ION_MODIFICATIONS.get(ion_type)
     if modification is None:
         return []
@@ -63,12 +64,19 @@ def _generate_n_terminal_ions(
     for i in range(len(prefix_masses) - 1):
         neutral_mass = prefix_masses[i] + modification
         fragment_sequence = sequence[: i + 1]
+        cleavage_aa = sequence[i]  # Amino acid at the cleavage site
+
+        # Get intensity enhancement factor
+        intensity_factor = FRAGMENTATION_ENHANCEMENT_RULES.get(
+            cleavage_aa, FRAGMENTATION_ENHANCEMENT_RULES['default']
+        )
+        base_intensity = 100.0 * intensity_factor
 
         # Add the primary ion
         for charge in charges:
             if charge == 0: continue
             mz = (neutral_mass + charge * PROTON_MASS) / charge
-            fragment_mzs.append(mz)
+            fragments.append((mz, base_intensity))
 
         # Handle neutral losses
         possible_losses = set()
@@ -79,19 +87,21 @@ def _generate_n_terminal_ions(
 
         for loss_mass in possible_losses:
             loss_neutral_mass = neutral_mass - loss_mass
+            # Neutral loss ions are typically less intense
+            loss_intensity = base_intensity * 0.2
             for charge in charges:
                 if charge == 0: continue
                 mz = (loss_neutral_mass + charge * PROTON_MASS) / charge
-                fragment_mzs.append(mz)
+                fragments.append((mz, loss_intensity))
 
-    return fragment_mzs
+    return fragments
 
 
 def _generate_c_terminal_ions(
     sequence: str, suffix_masses: list[float], ion_type: str, charges: list[int]
-) -> list[float]:
+) -> List[Tuple[float, float]]:
     """Generates m/z values for C-terminal ions (x, y, z), including neutral losses."""
-    fragment_mzs = []
+    fragments = []
     modification = FRAGMENT_ION_MODIFICATIONS.get(ion_type)
     if modification is None:
         return []
@@ -99,12 +109,20 @@ def _generate_c_terminal_ions(
     for i in range(len(suffix_masses) - 1):
         neutral_mass = suffix_masses[i + 1] + modification
         fragment_sequence = sequence[i + 1 :]
+        # For y-ions, cleavage is N-terminal to the fragment
+        cleavage_aa = sequence[i + 1]
+
+        # Get intensity enhancement factor
+        intensity_factor = FRAGMENTATION_ENHANCEMENT_RULES.get(
+            cleavage_aa, FRAGMENTATION_ENHANCEMENT_RULES['default']
+        )
+        base_intensity = 100.0 * intensity_factor
 
         # Add the primary ion
         for charge in charges:
             if charge == 0: continue
             mz = (neutral_mass + charge * PROTON_MASS) / charge
-            fragment_mzs.append(mz)
+            fragments.append((mz, base_intensity))
 
         # Handle neutral losses
         possible_losses = set()
@@ -115,12 +133,13 @@ def _generate_c_terminal_ions(
 
         for loss_mass in possible_losses:
             loss_neutral_mass = neutral_mass - loss_mass
+            loss_intensity = base_intensity * 0.2
             for charge in charges:
                 if charge == 0: continue
                 mz = (loss_neutral_mass + charge * PROTON_MASS) / charge
-                fragment_mzs.append(mz)
+                fragments.append((mz, loss_intensity))
 
-    return fragment_mzs
+    return fragments
 
 
 def generate_fragment_ions(
@@ -128,9 +147,9 @@ def generate_fragment_ions(
     ion_types: list[str],
     charges: list[int],
     ptms: Optional[dict[int, float]] = None,
-) -> list[float]:
+) -> List[Tuple[float, float]]:
     """
-    Generates a list of m/z values for specified fragment ions.
+    Generates a list of (m/z, intensity) tuples for specified fragment ions.
 
     Args:
         sequence: The amino acid sequence of the peptide.
@@ -140,12 +159,12 @@ def generate_fragment_ions(
               0-based residue indices and values are the mass shifts.
 
     Returns:
-        A list of calculated m/z values for the fragment ions.
+        A list of (mz, intensity) tuples for the fragment ions.
     """
     if not sequence:
         return []
 
-    fragment_mzs = []
+    fragments = []
     n_term_ion_types = {'a', 'b', 'c'}
     c_term_ion_types = {'x', 'y', 'z'}
 
@@ -154,15 +173,25 @@ def generate_fragment_ions(
 
     for ion_type in ion_types:
         if ion_type in n_term_ion_types:
-            fragment_mzs.extend(
+            fragments.extend(
                 _generate_n_terminal_ions(sequence, prefix_masses, ion_type, charges)
             )
         elif ion_type in c_term_ion_types:
-            fragment_mzs.extend(
+            fragments.extend(
                 _generate_c_terminal_ions(sequence, suffix_masses, ion_type, charges)
             )
 
-    return sorted(set(fragment_mzs))
+    # In a real spectrum, multiple fragments can have the same m/z.
+    # For this simulation, we'll just take the most intense one.
+    # A more advanced model could sum them.
+    unique_fragments = {}
+    for mz, intensity in fragments:
+        if mz not in unique_fragments or intensity > unique_fragments[mz]:
+            unique_fragments[mz] = intensity
+
+    sorted_fragments = sorted(unique_fragments.items())
+
+    return sorted_fragments
 
 
 def generate_fragmentation_events(
@@ -180,20 +209,22 @@ def generate_fragmentation_events(
         return []
 
     # For now, generate one event per precursor
-    fragment_mzs = generate_fragment_ions(
+    fragment_data = generate_fragment_ions(
         sequence, ion_types, fragment_charges
     )
 
-    # Dummy intensities for now
-    fragment_intensities = [100.0] * len(fragment_mzs)
+    if not fragment_data:
+        fragment_mzs, fragment_intensities = [], []
+    else:
+        fragment_mzs, fragment_intensities = zip(*fragment_data)
 
     # Calculate precursor m/z
     total_mass = sum(AMINO_ACID_MASSES.get(aa, 0.0) for aa in sequence)
     precursor_mz = (total_mass + precursor_charge * PROTON_MASS) / precursor_charge
 
     fragments = Spectrum(
-        mz=fragment_mzs,
-        intensity=fragment_intensities,
+        mz=list(fragment_mzs),
+        intensity=list(fragment_intensities),
     )
 
     event = FragmentationEvent(
