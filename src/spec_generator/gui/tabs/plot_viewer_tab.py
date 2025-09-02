@@ -10,22 +10,16 @@ class PlotViewerTab(ttk.Frame):
         self.style = style
 
         # Create a figure and a set of subplots
-        self.fig = Figure(figsize=(5, 4), dpi=100, facecolor=self.style.colors.bg)
+        self.fig = Figure(figsize=(5, 4), dpi=100)
         self.ax = self.fig.add_subplot(111)
         self.fig.tight_layout(pad=3.0)
-        self._style_plot()
 
         # Create a canvas to display the plot
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
-        self.canvas.draw()
 
         # Create a toolbar for the plot
         self.toolbar = NavigationToolbar2Tk(self.canvas, self, pack_toolbar=False)
         self.toolbar.update()
-        self.toolbar.pack(side=tk.TOP, fill=tk.X, padx=5, pady=2)
-
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        self.ax.plot([]) # Start with an empty plot
 
         # Crosshair feature
         self.crosshair_v = self.ax.axvline(0, color='grey', lw=0.5, linestyle='--', visible=False)
@@ -37,6 +31,13 @@ class PlotViewerTab(ttk.Frame):
         )
         self.crosshair_text.set_visible(False)
 
+        self._style_plot()
+
+        # Layout the widgets
+        self.toolbar.pack(side=tk.TOP, fill=tk.X, padx=5, pady=2)
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        self.ax.plot([]) # Start with an empty plot
         self.canvas.draw()
 
         # Connect motion and leave events for crosshair
