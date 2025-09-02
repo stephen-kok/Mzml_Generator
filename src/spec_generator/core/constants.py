@@ -66,3 +66,13 @@ NEUTRAL_LOSS_RULES = {
     'K': [NH3_MASS],  # Lysine -> loss of ammonia
     'R': [NH3_MASS],  # Arginine -> loss of ammonia
 }
+
+# --- Fragmentation Intensity Rules ---
+# Simplified model for factors that enhance fragmentation at a specific bond.
+# Based on the "mobile proton" model. Cleavage C-terminal to Proline is
+# highly favored.
+# The keys are single-letter amino acid codes. The values are multipliers.
+FRAGMENTATION_ENHANCEMENT_RULES = {
+    'P': 5.0,  # Proline
+    'default': 1.0,
+}

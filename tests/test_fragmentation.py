@@ -47,7 +47,8 @@ class TestFragmentation(unittest.TestCase):
             for charge in charges:
                 expected_mzs.append((mass + charge * PROTON_MASS) / charge)
 
-        result_mzs = generate_fragment_ions(sequence, ion_types, charges)
+        result_fragments = generate_fragment_ions(sequence, ion_types, charges)
+        result_mzs = [item[0] for item in result_fragments]
 
         expected_set = {round(mz, 4) for mz in expected_mzs}
         result_set = {round(mz, 4) for mz in result_mzs}
@@ -55,6 +56,36 @@ class TestFragmentation(unittest.TestCase):
         # Check that all expected base ions are present (neutral loss ions may also be present)
         self.assertTrue(expected_set.issubset(result_set),
                         f"Missing ions: {expected_set - result_set}")
+
+    def test_intensity_model_proline(self):
+        """Test that cleavage C-terminal to Proline is enhanced."""
+        sequence = "TESTPEPTIDE"
+        ion_types = ["b"]
+        charges = [1]
+
+        # b-ion series: T, TE, TES, TEST, TESTP, ...
+        # The b5 ion is 'TESTP'. Cleavage is after P.
+        # Its intensity should be higher than the b4 ion 'TEST'.
+        P, E, S, T = (
+            AMINO_ACID_MASSES['P'], AMINO_ACID_MASSES['E'],
+            AMINO_ACID_MASSES['S'], AMINO_ACID_MASSES['T']
+        )
+        b4_mass = T + E + S + T
+        b5_mass = T + E + S + T + P
+
+        b4_mz = (b4_mass + PROTON_MASS) / 1
+        b5_mz = (b5_mass + PROTON_MASS) / 1
+
+        result_fragments = generate_fragment_ions(sequence, ion_types, charges)
+        result_dict = {round(item[0], 4): item[1] for item in result_fragments}
+
+        b4_intensity = result_dict.get(round(b4_mz, 4), 0)
+        b5_intensity = result_dict.get(round(b5_mz, 4), 0)
+
+        self.assertGreater(b5_intensity, b4_intensity,
+                         "Intensity of b-ion after Proline should be enhanced.")
+        self.assertAlmostEqual(b5_intensity / b4_intensity, 5.0,
+                             "Proline enhancement factor should be 5.0")
 
     def test_a_and_x_ions(self):
         """Test generation of a and x ions."""
@@ -71,7 +102,8 @@ class TestFragmentation(unittest.TestCase):
         for mass in a_masses + x_masses:
             expected_mzs.append((mass + PROTON_MASS) / 1)
 
-        result_mzs = generate_fragment_ions(sequence, ion_types, charges)
+        result_fragments = generate_fragment_ions(sequence, ion_types, charges)
+        result_mzs = [item[0] for item in result_fragments]
         np.testing.assert_allclose(sorted(result_mzs), sorted(expected_mzs), rtol=1e-5)
 
     def test_neutral_loss(self):
@@ -94,7 +126,8 @@ class TestFragmentation(unittest.TestCase):
             b3_mass - H2O_MASS,
         ]
 
-        result_mzs = generate_fragment_ions(sequence, ion_types, charges)
+        result_fragments = generate_fragment_ions(sequence, ion_types, charges)
+        result_mzs = [item[0] for item in result_fragments]
 
         expected_mzs = [(m + PROTON_MASS) / 1 for m in expected_masses]
         result_set = {round(mz, 4) for mz in result_mzs}
@@ -124,7 +157,8 @@ class TestFragmentation(unittest.TestCase):
         expected_masses = [b3_mass, b4_mass_phos, y3_mass, y4_mass_phos]
         expected_mzs = [(m + PROTON_MASS) / 1 for m in expected_masses]
 
-        result_mzs = generate_fragment_ions(sequence, ion_types, charges, ptms=ptms)
+        result_fragments = generate_fragment_ions(sequence, ion_types, charges, ptms=ptms)
+        result_mzs = [item[0] for item in result_fragments]
 
         result_set = {round(mz, 4) for mz in result_mzs}
         expected_set = {round(mz, 4) for mz in expected_mzs}
