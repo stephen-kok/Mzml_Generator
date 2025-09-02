@@ -8,7 +8,7 @@ import numpy as np
 
 from ..config import SpectrumGeneratorConfig
 from ..utils.file_io import read_protein_list_file, format_filename
-from ..logic.simulation import execute_simulation_and_write_mzml, run_simulation_for_preview
+from ..logic.simulation import execute_simulation_and_write_mzml
 from ..workers.tasks import run_simulation_task
 from ..core.spectrum import generate_protein_spectrum
 from ..core.lc import apply_lc_profile_and_noise
