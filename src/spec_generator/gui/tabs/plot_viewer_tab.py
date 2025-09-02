@@ -115,46 +115,50 @@ class PlotViewerTab(ttk.Frame):
         self.ax.clear()
         self.annotations = []
         self._style_plot()
-        self.mz_array, spectra_data = data
 
-        # Determine if the data is LC-MS data
-        is_lc = False
-        if isinstance(spectra_data, list) and spectra_data:
-            if spectra_data[0].ndim == 2 and spectra_data[0].shape[0] > 1:
-                is_lc = True
+        if not data:
+            self.ax.plot([])
+            self.ax.set_title("No data to display")
+            self.canvas.draw()
+            return
 
-        if is_lc:
+        self.mz_array, list_of_chromatograms = data
+
+        if not list_of_chromatograms:
+            self.ax.plot([])
+            self.ax.set_title("No data to display")
+            self.canvas.draw()
+            return
+
+        # The viewer plots one chromatogram at a time. Get the first one.
+        # It's a list of 1D arrays (scans).
+        chromatogram_scans = list_of_chromatograms[0]
+
+        # Check if it's LC data (more than one scan)
+        if isinstance(chromatogram_scans, list) and len(chromatogram_scans) > 1:
             self.is_lc_data = True
-            self.lc_data = spectra_data
-            self.num_scans = self.lc_data[0].shape[0]
+            # Convert list of scans to a 2D numpy array for easier handling
+            self.lc_data = np.array(chromatogram_scans)
+            self.num_scans = self.lc_data.shape[0]
 
             self._setup_lc_controls()
             self.lc_controls_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(2,5), before=self.canvas.get_tk_widget())
 
             # Initially plot the Total Ion Current (TIC)
-            total_intensity = np.zeros_like(self.mz_array)
-            for chrom in self.lc_data:
-                total_intensity += chrom.sum(axis=0)
+            total_intensity = self.lc_data.sum(axis=0)
 
             self.plotted_intensity = total_intensity
             self.ax.plot(self.mz_array, self.plotted_intensity, color=self.style.colors.primary)
             self.ax.set_title("Total Ion Current (Sum of All Scans)")
-
-        else: # Not LC data
+        else: # Not LC data, or only one scan
             self.is_lc_data = False
             self.lc_controls_frame.pack_forget()
             self.lc_data = None
 
-            # Process as a single spectrum (original logic)
-            total_intensity = np.zeros_like(self.mz_array)
-            chromatograms = [spectra_data] if not isinstance(spectra_data, list) else spectra_data
-            for chrom in chromatograms:
-                if chrom.ndim == 2:
-                    total_intensity += chrom.sum(axis=0)
-                else:
-                    total_intensity += chrom
+            # If it's a list, take the first element, otherwise it's the spectrum itself.
+            single_spectrum = chromatogram_scans[0] if isinstance(chromatogram_scans, list) else chromatogram_scans
 
-            self.plotted_intensity = total_intensity
+            self.plotted_intensity = single_spectrum
             self.ax.plot(self.mz_array, self.plotted_intensity, color=self.style.colors.primary)
             self.ax.set_title("Mass Spectrum")
 
@@ -178,8 +182,9 @@ class PlotViewerTab(ttk.Frame):
             self.crosshair_text.set_visible(True)
 
         x, y = event.xdata, event.ydata
-        self.crosshair_v.set_xdata(x)
-        self.crosshair_h.set_ydata(y)
+        # For axvline/axhline, set_xdata/set_ydata expects a sequence.
+        self.crosshair_v.set_xdata([x, x])
+        self.crosshair_h.set_ydata([y, y])
         self.crosshair_text.set_text(f'm/z: {x:,.2f}\nIntensity: {y:,.2f}')
         self.canvas.draw_idle()
 
