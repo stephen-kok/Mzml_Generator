@@ -40,7 +40,7 @@ class SimulationRunner:
         num_sub_tasks = []
         for i, protein_mass in enumerate(self.config.protein_masses):
             if self.config.mass_inhomogeneity > 0:
-                num_samples = 7
+                num_samples = self.config.mass_inhomogeneity_samples
                 mass_distribution = np.random.normal(
                     loc=protein_mass,
                     scale=self.config.mass_inhomogeneity,
@@ -216,27 +216,31 @@ def execute_simulation_and_write_mzml(
             progress_callback('error', "Filename template resulted in an empty name.")
             return False
 
-        # --- Dummy MS/MS Data Generation ---
+        # --- MS/MS Data Generation ---
         msms_spectra = []
-        if config.peptide_sequences:
+        if config.common.msms_enabled and config.peptide_sequences:
+            self.progress_callback("log", "Generating MS/MS spectra...\n")
             for seq in config.peptide_sequences:
-                events = generate_fragmentation_events(
-                    sequence=seq,
-                    precursor_charge=2,
-                    ion_types=['y', 'b'],
-                    fragment_charges=[1],
-                    rt=30.0, # dummy rt
-                    precursor_intensity=1e5, # dummy intensity
-                    config=config,
-                )
-                msms_spectra.append(
-                    MSMSSpectrum(
-                        rt=30.0,
-                        precursor_mz=events[0].precursor_mz,
-                        precursor_charge=2,
-                        fragmentation_events=events
+                # Loop through configured precursor charges
+                for precursor_charge in config.common.msms_precursor_charges:
+                    events = generate_fragmentation_events(
+                        sequence=seq,
+                        precursor_charge=precursor_charge,
+                        ion_types=config.common.msms_ion_types,
+                        fragment_charges=config.common.msms_fragment_charges,
+                        rt=30.0,  # dummy rt
+                        precursor_intensity=1e5,  # dummy intensity
+                        config=config,
                     )
-                )
+                    if events:
+                        msms_spectra.append(
+                            MSMSSpectrum(
+                                rt=30.0,
+                                precursor_mz=events[0].precursor_mz,
+                                precursor_charge=precursor_charge,
+                                fragmentation_events=events,
+                            )
+                        )
 
         mzml_content = create_mzml_content_et(
             mz_range,

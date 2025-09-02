@@ -19,6 +19,12 @@ class CommonParams:
     output_directory: str
     seed: int
     filename_template: str
+    # Tech debt remediation: Add MS/MS config
+    msms_enabled: bool = False
+    msms_ion_types: List[str] = field(default_factory=lambda: ['y', 'b'])
+    msms_fragment_charges: List[int] = field(default_factory=lambda: [1])
+    msms_precursor_charges: List[int] = field(default_factory=lambda: [2])
+
 
 @dataclass
 class LCParams:
@@ -44,6 +50,8 @@ class SpectrumGeneratorConfig:
     mass_inhomogeneity: float
     hydrophobicity_scores: List[float] | None = None
     peptide_sequences: List[str] | None = None
+    # Tech debt remediation: Add inhomogeneity samples
+    mass_inhomogeneity_samples: int = 7
 
 @dataclass
 class CovalentBindingConfig:
