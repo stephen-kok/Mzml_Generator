@@ -55,16 +55,16 @@ FRAGMENT_ION_MODIFICATIONS = {
 
 # Amino acids prone to neutral loss events.
 # The keys are the single-letter amino acid codes, and the values are a list
-# of mass losses (e.g., H2O, NH3) that can occur.
+# of chemical compositions (as strings) that can be lost.
 NEUTRAL_LOSS_RULES = {
-    'S': [H2O_MASS],  # Serine -> loss of water
-    'T': [H2O_MASS],  # Threonine -> loss of water
-    'D': [H2O_MASS],  # Aspartic Acid -> loss of water
-    'E': [H2O_MASS],  # Glutamic Acid -> loss of water
-    'N': [NH3_MASS],  # Asparagine -> loss of ammonia
-    'Q': [NH3_MASS],  # Glutamine -> loss of ammonia
-    'K': [NH3_MASS],  # Lysine -> loss of ammonia
-    'R': [NH3_MASS],  # Arginine -> loss of ammonia
+    'S': ["H2O"],  # Serine -> loss of water
+    'T': ["H2O"],  # Threonine -> loss of water
+    'D': ["H2O"],  # Aspartic Acid -> loss of water
+    'E': ["H2O"],  # Glutamic Acid -> loss of water
+    'N': ["NH3"],  # Asparagine -> loss of ammonia
+    'Q': ["NH3"],  # Glutamine -> loss of ammonia
+    'K': ["NH3"],  # Lysine -> loss of ammonia
+    'R': ["NH3"],  # Arginine -> loss of ammonia
 }
 
 # --- Fragmentation Intensity Rules ---

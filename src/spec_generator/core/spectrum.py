@@ -5,12 +5,13 @@ from dataclasses import dataclass, field
 from typing import List
 import numpy as np
 import numba
+from pyteomics import mass
 
 from .constants import (BASE_INTENSITY_SCALAR, FWHM_TO_SIGMA, MZ_SCALE_FACTOR,
                         PROTON_MASS)
 from .isotopes import isotope_calculator
 from .peptide_isotopes import peptide_isotope_calculator
-from ..logic.fragmentation import generate_fragment_ions
+from ..logic.fragmentation import generate_fragment_ions, FragmentIon
 from .types import FragmentationEvent
 
 
@@ -28,15 +29,11 @@ def _build_spectrum_from_peaks_numba(
     final_spectrum = np.zeros_like(mz_range, dtype=np.float64)
 
     # Numba works best with explicit loops.
-    # The chunking approach from the original numpy version is less necessary here,
-    # but we can still process peak-by-peak, which is very Numba-friendly.
     for i in range(len(peak_mzs)):
         mz = peak_mzs[i]
         intensity = peak_intensities[i]
         sigma = peak_sigmas[i]
 
-        # Determine the relevant m/z range to calculate for this peak
-        # (e.g., +/- 5 sigma) to avoid calculating the full Gaussian.
         m_dist = 5 * sigma
         start_idx = np.searchsorted(mz_range, mz - m_dist, side='left')
         end_idx = np.searchsorted(mz_range, mz + m_dist, side='right')
@@ -44,13 +41,9 @@ def _build_spectrum_from_peaks_numba(
         if start_idx >= end_idx:
             continue
 
-        # Slicing inside a Numba loop
         relevant_mz = mz_range[start_idx:end_idx]
-
         two_sigma_sq = 2 * sigma**2
         gaussian = intensity * np.exp(-((relevant_mz - mz)**2) / two_sigma_sq)
-
-        # Add the calculated Gaussian to the corresponding slice of the final spectrum
         final_spectrum[start_idx:end_idx] += gaussian
 
     return final_spectrum
@@ -69,7 +62,6 @@ def generate_protein_spectrum(
     Generates a single, clean protein spectrum including isotopic distribution
     and charge state envelope.
     """
-    # Determine monoisotopic mass from average mass
     if isotopic_enabled:
         isotopic_distribution, most_abundant_offset = isotope_calculator.get_distribution(protein_avg_mass)
         protein_mono_mass = protein_avg_mass - most_abundant_offset
@@ -77,7 +69,6 @@ def generate_protein_spectrum(
         isotopic_distribution, most_abundant_offset = [(0.0, 1.0)], 0.0
         protein_mono_mass = protein_avg_mass
 
-    # Determine charge state range based on m/z range
     effective_mass = protein_mono_mass + most_abundant_offset
     min_charge = math.ceil(effective_mass / (mz_range[-1] - PROTON_MASS)) if mz_range[-1] > PROTON_MASS else 1
     max_charge = math.floor(effective_mass / (mz_range[0] - PROTON_MASS)) if mz_range[0] > PROTON_MASS else 150
@@ -86,7 +77,6 @@ def generate_protein_spectrum(
     if min_charge > max_charge:
         return np.zeros_like(mz_range, dtype=float)
 
-    # Create charge state envelope
     charge_states = np.arange(min_charge, max_charge + 1)
     num_valid_charge_states = len(charge_states)
     peak_charge_index_relative = num_valid_charge_states // 2
@@ -98,14 +88,12 @@ def generate_protein_spectrum(
         intensity_scalar
     )
 
-    # Collect peak properties from all isotopes and charge states
     all_peak_mzs, all_peak_intensities, all_peak_sigmas = [], [], []
     isotope_offsets, isotope_rel_intensities = np.array([p[0] for p in isotopic_distribution]), np.array([p[1] for p in isotopic_distribution])
 
     for i, charge in enumerate(charge_states):
         monoisotopic_mz = (protein_mono_mass + charge * PROTON_MASS) / charge
         base_intensity = charge_env_intensities[i]
-
         isotope_mzs = monoisotopic_mz + (isotope_offsets / charge)
         visible_mask = (isotope_mzs >= mz_range[0]) & (isotope_mzs <= mz_range[-1])
 
@@ -127,12 +115,10 @@ def generate_protein_spectrum(
     if not all_peak_mzs:
         return np.zeros_like(mz_range)
 
-    # Convert lists to numpy arrays for Numba
     all_peak_mzs = np.array(all_peak_mzs, dtype=np.float64)
     all_peak_intensities = np.array(all_peak_intensities, dtype=np.float64)
     all_peak_sigmas = np.array(all_peak_sigmas, dtype=np.float64)
 
-    # Call the optimized Numba function to build the final spectrum
     return _build_spectrum_from_peaks_numba(
         mz_range, all_peak_mzs, all_peak_intensities, all_peak_sigmas
     )
@@ -149,7 +135,6 @@ def generate_peptide_spectrum(
     """
     Generates a single, clean spectrum for a peptide at a specific charge state.
     """
-    # This now returns a list of (m/z, relative_intensity) tuples
     isotopic_distribution = peptide_isotope_calculator.get_distribution(
         peptide_sequence, charge=charge
     )
@@ -157,11 +142,9 @@ def generate_peptide_spectrum(
     if not isotopic_distribution:
         return np.zeros_like(mz_range)
 
-    # Extract m/z values and their base relative intensities
     peak_mzs = np.array([p[0] for p in isotopic_distribution])
     peak_rel_intensities = np.array([p[1] for p in isotopic_distribution])
 
-    # Filter for peaks within the visible m/z range
     visible_mask = (peak_mzs >= mz_range[0]) & (peak_mzs <= mz_range[-1])
     if not np.any(visible_mask):
         return np.zeros_like(mz_range)
@@ -169,7 +152,6 @@ def generate_peptide_spectrum(
     visible_mzs = peak_mzs[visible_mask]
     visible_intensities = intensity_scalar * peak_rel_intensities[visible_mask]
 
-    # Calculate sigma for each peak based on its m/z
     sigma_intrinsic = peak_sigma_mz_float * (visible_mzs / MZ_SCALE_FACTOR)
     if resolution > 0:
         sigma_resolution = (visible_mzs / resolution) / FWHM_TO_SIGMA
@@ -177,7 +159,6 @@ def generate_peptide_spectrum(
     else:
         visible_sigmas = sigma_intrinsic
 
-    # Call the optimized Numba function to build the final spectrum
     return _build_spectrum_from_peaks_numba(
         mz_range, visible_mzs, visible_intensities, visible_sigmas
     )
@@ -199,7 +180,6 @@ def generate_binding_spectrum(
     Generates a spectrum for a covalent binding scenario, including native,
     DAR-1, and DAR-2 species. The generation of each species is done in parallel.
     """
-    # Calculate intensity scalars for each species based on binding percentages
     native_intensity_scalar = (
         original_intensity_scalar * (100 - total_binding_percentage) / 100.0
     )
@@ -215,42 +195,15 @@ def generate_binding_spectrum(
 
     dar1_intensity_scalar = total_bound_intensity - dar2_intensity_scalar
 
-    # Define the tasks for each species
     tasks = [
-        (
-            protein_avg_mass,
-            mz_range,
-            mz_step_float,
-            peak_sigma_mz_float,
-            native_intensity_scalar,
-            isotopic_enabled,
-            resolution,
-        ),
-        (
-            protein_avg_mass + compound_avg_mass,
-            mz_range,
-            mz_step_float,
-            peak_sigma_mz_float,
-            dar1_intensity_scalar,
-            isotopic_enabled,
-            resolution,
-        ),
-        (
-            protein_avg_mass + 2 * compound_avg_mass,
-            mz_range,
-            mz_step_float,
-            peak_sigma_mz_float,
-            dar2_intensity_scalar,
-            isotopic_enabled,
-            resolution,
-        ),
+        (protein_avg_mass, mz_range, mz_step_float, peak_sigma_mz_float, native_intensity_scalar, isotopic_enabled, resolution),
+        (protein_avg_mass + compound_avg_mass, mz_range, mz_step_float, peak_sigma_mz_float, dar1_intensity_scalar, isotopic_enabled, resolution),
+        (protein_avg_mass + 2 * compound_avg_mass, mz_range, mz_step_float, peak_sigma_mz_float, dar2_intensity_scalar, isotopic_enabled, resolution),
     ]
 
-    # Generate spectra in parallel
     with multiprocessing.Pool(processes=3) as pool:
         results = pool.starmap(generate_protein_spectrum, tasks)
 
-    # Sum the results
     return np.sum(results, axis=0)
 
 
@@ -264,41 +217,85 @@ def generate_fragment_spectrum(
     fragment_charges: list[int],
 ) -> np.ndarray:
     """
-    Generates a tandem mass spectrum for a peptide, including specified fragment ions.
+    Generates a tandem mass spectrum for a peptide, including specified
+    fragment ions with full isotopic distributions.
     """
-    # Generate the m/z values for all requested fragment ions
-    fragment_mzs = generate_fragment_ions(
+    fragment_definitions = generate_fragment_ions(
         sequence=peptide_sequence,
         ion_types=ion_types,
         charges=fragment_charges,
     )
 
-    if not fragment_mzs:
+    if not fragment_definitions:
         return np.zeros_like(mz_range)
 
-    # For now, we are not calculating full isotopic distributions for fragments.
-    # We will treat each fragment as a single peak.
-    peak_mzs = np.array(fragment_mzs)
+    all_peak_mzs, all_peak_intensities, all_peak_sigmas = [], [], []
 
-    # Filter for peaks within the visible m/z range
-    visible_mask = (peak_mzs >= mz_range[0]) & (peak_mzs <= mz_range[-1])
-    if not np.any(visible_mask):
+    # Define terminal modifications as pyteomics Composition objects
+    ion_comp_mods = {
+        'a': mass.Composition({'C': -1, 'O': -1}),
+        'b': mass.Composition({}),
+        'c': mass.Composition({'N': 1, 'H': 3}),
+        'x': mass.Composition({'C': 1, 'O': 1}),
+        'y': mass.Composition({'H': 2, 'O': 1}),
+        'z': mass.Composition({'O': 1, 'H': -1, 'N': -1}),
+    }
+
+    for frag in fragment_definitions:
+        try:
+            base_comp = mass.Composition(frag.sequence)
+            mod_comp = ion_comp_mods.get(frag.ion_type, mass.Composition({}))
+            final_comp = base_comp + mod_comp
+
+            if frag.neutral_loss:
+                loss_comp = mass.Composition(frag.neutral_loss)
+                final_comp -= loss_comp
+
+            dist = list(mass.isotopologues(
+                composition=final_comp,
+                report_abundance=True,
+                overall_threshold=1e-5
+            ))
+
+            if not dist:
+                continue
+
+            isotope_comps, isotope_abundances = zip(*dist)
+            isotope_mzs = [mass.calculate_mass(composition=c, charge=frag.charge) for c in isotope_comps]
+            isotope_abundances = np.array(isotope_abundances)
+            max_abundance = np.max(isotope_abundances)
+            if max_abundance < 1e-9: continue
+
+            relative_intensities = isotope_abundances / max_abundance
+            scaled_intensities = relative_intensities * frag.intensity * intensity_scalar
+
+            visible_mask = (np.array(isotope_mzs) >= mz_range[0]) & (np.array(isotope_mzs) <= mz_range[-1])
+            if not np.any(visible_mask):
+                continue
+
+            visible_mzs = np.array(isotope_mzs)[visible_mask]
+            visible_intensities = scaled_intensities[visible_mask]
+
+            all_peak_mzs.extend(visible_mzs)
+            all_peak_intensities.extend(visible_intensities)
+
+            sigma_intrinsic = peak_sigma_mz_float * (visible_mzs / MZ_SCALE_FACTOR)
+            if resolution > 0:
+                sigma_resolution = (visible_mzs / resolution) / FWHM_TO_SIGMA
+                total_sigma = np.sqrt(sigma_intrinsic**2 + sigma_resolution**2)
+            else:
+                total_sigma = sigma_intrinsic
+            all_peak_sigmas.extend(total_sigma)
+
+        except Exception:
+            continue # Skip fragments that cause errors
+
+    if not all_peak_mzs:
         return np.zeros_like(mz_range)
 
-    visible_mzs = peak_mzs[visible_mask]
-    # For now, assign a base intensity to all fragment peaks
-    # A more sophisticated model could vary this
-    visible_intensities = np.full_like(visible_mzs, BASE_INTENSITY_SCALAR * intensity_scalar)
-
-    # Calculate sigma for each peak based on its m/z
-    sigma_intrinsic = peak_sigma_mz_float * (visible_mzs / MZ_SCALE_FACTOR)
-    if resolution > 0:
-        sigma_resolution = (visible_mzs / resolution) / FWHM_TO_SIGMA
-        visible_sigmas = np.sqrt(sigma_intrinsic**2 + sigma_resolution**2)
-    else:
-        visible_sigmas = sigma_intrinsic
-
-    # Call the optimized Numba function to build the final spectrum
     return _build_spectrum_from_peaks_numba(
-        mz_range, visible_mzs, visible_intensities, visible_sigmas
+        mz_range,
+        np.array(all_peak_mzs),
+        np.array(all_peak_intensities),
+        np.array(all_peak_sigmas),
     )
