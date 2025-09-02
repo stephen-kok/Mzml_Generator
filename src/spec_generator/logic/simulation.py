@@ -226,7 +226,8 @@ def execute_simulation_and_write_mzml(
                     ion_types=['y', 'b'],
                     fragment_charges=[1],
                     rt=30.0, # dummy rt
-                    precursor_intensity=1e5 # dummy intensity
+                    precursor_intensity=1e5, # dummy intensity
+                    config=config,
                 )
                 msms_spectra.append(
                     MSMSSpectrum(
