@@ -72,14 +72,27 @@ class SpectrumTabLogic:
             task_queue.put(('done', None))
 
     def start_plot_generation(self, config_dict: dict, task_queue, callback):
+        def target_with_callback(config, return_data_only, callback_fn):
+            """Helper function to run the task and then call the GUI callback."""
+            try:
+                result = run_simulation_task(config, return_data_only)
+                task_queue.put(('callback', (callback_fn, result)))
+            except Exception as e:
+                task_queue.put(('error', f"An error occurred in the plot generation worker: {e}"))
+                task_queue.put(('callback', (callback_fn, None)))
+
         try:
             config = self.validate_and_prepare_config(config_dict, task_queue)
             if not config.protein_masses:
                 raise ValueError("No protein masses entered for plotting.")
 
-            pool = multiprocessing.Pool(processes=1)
-            pool.apply_async(run_simulation_task, args=(config, True), callback=callback)
-            pool.close()
+            # Run the simulation in a separate thread to avoid blocking the GUI.
+            # The simulation itself uses a multiprocessing pool, so this is safe.
+            threading.Thread(
+                target=target_with_callback,
+                args=(config, True, callback),
+                daemon=True
+            ).start()
 
         except Exception as e:
             task_queue.put(('error', f"A processing error occurred: {e}"))
