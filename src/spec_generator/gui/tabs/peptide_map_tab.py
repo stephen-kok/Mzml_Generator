@@ -53,7 +53,8 @@ class PeptideMapTab(BaseTab):
 
         common_frame = ttk.Frame(gen_frame)
         common_frame.pack(fill="x", expand=True)
-        self.peptide_map_params = create_common_parameters_frame(common_frame, "200.0", "2000.0", "Low Noise")
+        self.peptide_map_params = create_common_parameters_frame(common_frame, "200.0", "2000.0")
+        self.peptide_map_params['isotopic_enabled_var'].set(True) # Override default for this tab
         self.peptide_map_params['output_directory_var'].set(os.path.join(os.getcwd(), "Peptide Map Mock Spectra"))
         self.peptide_map_params['filename_template_var'].set("{date}_{time}_pepmap_sim_{run_time}min_{noise}.mzML")
 

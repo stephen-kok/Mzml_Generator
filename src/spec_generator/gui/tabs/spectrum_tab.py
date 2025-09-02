@@ -86,9 +86,6 @@ class SpectrumTab(BaseTab):
     def _create_action_buttons_frame(self):
         button_frame = ttk.Frame(self.content_frame)
         button_frame.grid(row=3, column=0, pady=15)
-        self.spectrum_preview_button = ttk.Button(button_frame, text=C.PREVIEW_SPECTRUM_BUTTON_TEXT, command=self.preview_spectrum_command, style='Outline.TButton')
-        self.spectrum_preview_button.pack(side=LEFT, padx=5)
-        Tooltip(self.spectrum_preview_button, C.PREVIEW_SPECTRUM_TOOLTIP)
 
         self.plot_button = ttk.Button(button_frame, text=C.GENERATE_PLOT_BUTTON_TEXT, command=self.generate_and_plot_command, style='Outline.TButton')
         self.plot_button.pack(side=LEFT, padx=5)
@@ -177,19 +174,6 @@ class SpectrumTab(BaseTab):
             self.task_queue.put(('error', C.INVALID_INPUT_ERROR.format(e)))
             self.on_task_done()
 
-    def preview_spectrum_command(self):
-        self.spectrum_preview_button.config(state=DISABLED)
-        try:
-            config_dict = self._gather_config()
-            # Run the preview logic in a separate thread to avoid blocking the GUI
-            threading.Thread(target=self.logic.preview_spectrum, args=(config_dict, self.task_queue), daemon=True).start()
-        except ValueError as e:
-            self.task_queue.put(('error', C.INVALID_PREVIEW_INPUT_ERROR.format(e)))
-            self.on_preview_done()
-        except Exception as e:
-            self.task_queue.put(('error', C.UNEXPECTED_ERROR_MESSAGE.format(e)))
-            self.on_preview_done()
-
     def generate_and_plot_command(self):
         self.plot_button.config(state=DISABLED)
         try:
@@ -215,9 +199,6 @@ class SpectrumTab(BaseTab):
 
     def on_task_done(self):
         self.spectrum_generate_button.config(state=NORMAL)
-
-    def on_preview_done(self):
-        self.spectrum_preview_button.config(state=NORMAL)
 
     def on_plot_done(self):
         self.plot_button.config(state=NORMAL)

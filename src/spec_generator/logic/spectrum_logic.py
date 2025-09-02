@@ -160,23 +160,3 @@ class SpectrumTabLogic:
         else:
             task_queue.put(('done', None))
 
-    def preview_spectrum(self, config_dict: dict, task_queue):
-        try:
-            config = self.validate_and_prepare_config(config_dict, task_queue)
-            if not config.protein_masses:
-                raise ValueError("Please enter at least one protein mass.")
-
-            # Note: run_simulation_for_preview is now decoupled and does not need a callback.
-            simulation_result = run_simulation_for_preview(config)
-            if simulation_result:
-                mz_range, preview_spectrum = simulation_result
-                protein_avg_mass = config.protein_masses[0]
-                title = f"Preview (Avg Mass: {protein_avg_mass:.0f} Da, Res: {config.common.resolution/1000}k)"
-                show_plot(mz_range, {"Apex Scan Preview": preview_spectrum}, title)
-
-        except (ValueError, IndexError) as e:
-            task_queue.put(('error', f"Invalid parameters for preview: {e}"))
-        except Exception as e:
-            task_queue.put(('error', f"An unexpected error occurred during preview: {e}"))
-        finally:
-            task_queue.put(('preview_done', None))

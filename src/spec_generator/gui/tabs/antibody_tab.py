@@ -19,8 +19,14 @@ from .base_tab import BaseTab
 from ..shared_widgets import (create_common_parameters_frame,
                               create_lc_simulation_frame, PtmEditor)
 from ...config import AntibodySimConfig, Chain, Ptm
+from ...logic.antibody_logic import AntibodyTabLogic
+
 
 class AntibodyTab(BaseTab):
+    def __init__(self, master, style, app_controller=None):
+        super().__init__(master, style, app_controller=app_controller)
+        self.logic = AntibodyTabLogic()
+
     def create_widgets(self):
         self.chain_entries = []
         self.assembly_abundances = {}
@@ -86,6 +92,10 @@ class AntibodyTab(BaseTab):
 
         action_frame = ttk.Frame(gen_frame)
         action_frame.pack(pady=(10,0))
+
+        self.plot_button = ttk.Button(action_frame, text="Generate & Plot", command=self.generate_and_plot_command, style='Outline.TButton')
+        self.plot_button.pack(side=LEFT, padx=5)
+        Tooltip(self.plot_button, "Generate a single spectrum for the full antibody assembly and plot it in the Plot Viewer.")
 
         self.antibody_generate_button = ttk.Button(action_frame, text="Generate mzML File", command=self.generate_antibody_spectra_command, bootstyle=PRIMARY)
         self.antibody_generate_button.pack(side=LEFT, padx=5)
@@ -328,5 +338,25 @@ class AntibodyTab(BaseTab):
             self.task_queue.put(('error', f"Simulation failed: {e}"))
             self.task_queue.put(('done', None))
 
+    def generate_and_plot_command(self):
+        self.plot_button.config(state=DISABLED)
+        try:
+            config = self._gather_config()
+            self.logic.start_plot_generation(config, self.task_queue, self._handle_plot_result)
+        except ValueError as e:
+            self.task_queue.put(('error', f"Invalid input: {e}"))
+            self.on_plot_done()
+
+    def _handle_plot_result(self, result):
+        if result and self.app_controller:
+            plot_viewer = self.app_controller.get_plot_viewer()
+            if plot_viewer:
+                plot_viewer.plot_data(result)
+                self.app_controller.switch_to_plot_viewer()
+        self.on_plot_done()
+
     def on_task_done(self):
         self.antibody_generate_button.config(state=NORMAL)
+
+    def on_plot_done(self):
+        self.plot_button.config(state=NORMAL)

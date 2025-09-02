@@ -32,7 +32,7 @@ def _browse_directory_for_var(string_var: StringVar):
     if directory:
         string_var.set(directory)
 
-def create_common_parameters_frame(parent, mz_start, mz_end, noise):
+def create_common_parameters_frame(parent, mz_start, mz_end, noise="No Noise"):
     """
     Creates and returns a frame containing common simulation parameter widgets.
     """
@@ -42,7 +42,7 @@ def create_common_parameters_frame(parent, mz_start, mz_end, noise):
     mz_frame = ttk.LabelFrame(parent, text="m/z Parameters", padding=(15, 10))
     mz_frame.grid(row=0, column=0, sticky=EW, padx=10, pady=5)
 
-    params['isotopic_enabled_var'] = BooleanVar(value=True)
+    params['isotopic_enabled_var'] = BooleanVar(value=False)
     params['isotopic_enabled_check'] = ttk.Checkbutton(mz_frame, text="Enable Isotopic Distribution", variable=params['isotopic_enabled_var'], bootstyle="primary-round-toggle")
     params['isotopic_enabled_check'].grid(row=0, column=0, columnspan=2, sticky=W, pady=5)
     Tooltip(params['isotopic_enabled_check'], "If enabled, simulates the isotopic distribution for each charge state.\nIf disabled, generates a single peak for each charge state.")

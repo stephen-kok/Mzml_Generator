@@ -165,21 +165,6 @@ def _spectrum_generation_worker(
     return protein_index, spectrum
 
 
-def run_simulation_for_preview(config: SpectrumGeneratorConfig) -> tuple[np.ndarray, np.ndarray] | None:
-    """
-    Runs the core simulation and returns a single spectrum for previewing.
-    """
-    runner = SimulationRunner(config)
-    simulation_result = runner.run()
-
-    if simulation_result:
-        mz_range, spectra_data = simulation_result
-        # For preview, we just need the apex scan of the first (and only) chromatogram
-        apex_scan_index = (config.lc.num_scans - 1) // 2
-        return mz_range, spectra_data[0][apex_scan_index]
-    return None
-
-
 def execute_simulation_and_write_mzml(
     config: SpectrumGeneratorConfig,
     final_filepath: str,
