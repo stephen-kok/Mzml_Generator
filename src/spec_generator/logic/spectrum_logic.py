@@ -8,7 +8,7 @@ import numpy as np
 
 from ..config import SpectrumGeneratorConfig
 from ..utils.file_io import read_protein_list_file, format_filename
-from ..logic.simulation import execute_simulation_and_write_mzml, run_simulation_for_preview
+from ..logic.simulation import execute_simulation_and_write_mzml
 from ..workers.tasks import run_simulation_task
 from ..core.spectrum import generate_protein_spectrum
 from ..core.lc import apply_lc_profile_and_noise
@@ -70,20 +70,6 @@ class SpectrumTabLogic:
         except ValueError as e:
             task_queue.put(('error', str(e)))
             task_queue.put(('done', None))
-
-    def start_plot_generation(self, config_dict: dict, task_queue, callback):
-        try:
-            config = self.validate_and_prepare_config(config_dict, task_queue)
-            if not config.protein_masses:
-                raise ValueError("No protein masses entered for plotting.")
-
-            pool = multiprocessing.Pool(processes=1)
-            pool.apply_async(run_simulation_task, args=(config, True), callback=callback)
-            pool.close()
-
-        except Exception as e:
-            task_queue.put(('error', f"A processing error occurred: {e}"))
-            callback(None)
 
     def _worker_generate_from_protein_file(self, config: SpectrumGeneratorConfig, task_queue):
         try:
@@ -147,23 +133,3 @@ class SpectrumTabLogic:
         else:
             task_queue.put(('done', None))
 
-    def preview_spectrum(self, config_dict: dict, task_queue):
-        try:
-            config = self.validate_and_prepare_config(config_dict, task_queue)
-            if not config.protein_masses:
-                raise ValueError("Please enter at least one protein mass.")
-
-            # Note: run_simulation_for_preview is now decoupled and does not need a callback.
-            simulation_result = run_simulation_for_preview(config)
-            if simulation_result:
-                mz_range, preview_spectrum = simulation_result
-                protein_avg_mass = config.protein_masses[0]
-                title = f"Preview (Avg Mass: {protein_avg_mass:.0f} Da, Res: {config.common.resolution/1000}k)"
-                show_plot(mz_range, {"Apex Scan Preview": preview_spectrum}, title)
-
-        except (ValueError, IndexError) as e:
-            task_queue.put(('error', f"Invalid parameters for preview: {e}"))
-        except Exception as e:
-            task_queue.put(('error', f"An unexpected error occurred during preview: {e}"))
-        finally:
-            task_queue.put(('preview_done', None))

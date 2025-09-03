@@ -20,6 +20,7 @@ from ...core.lc import apply_lc_profile_and_noise
 from ...core.constants import BASE_INTENSITY_SCALAR
 from ...config import CovalentBindingConfig
 
+
 class BindingTab(BaseTab):
     def create_widgets(self):
         # --- Target & Compound Frame ---
@@ -85,9 +86,6 @@ class BindingTab(BaseTab):
         # --- Action Buttons ---
         button_frame = ttk.Frame(self.content_frame)
         button_frame.grid(row=4, column=0, pady=15)
-        self.binding_preview_button = ttk.Button(button_frame, text="Preview Binding", command=self._preview_binding_tab_command, style='Outline.TButton')
-        self.binding_preview_button.pack(side=LEFT, padx=5)
-        Tooltip(self.binding_preview_button, "Generate and display a plot of a binding spectrum using average probability values.")
 
         self.binding_generate_button = ttk.Button(button_frame, text="Generate Binding Spectra", command=self.generate_binding_spectra_command, bootstyle=PRIMARY)
         self.binding_generate_button.pack(side=LEFT, padx=5)
@@ -163,45 +161,6 @@ class BindingTab(BaseTab):
         except Exception as e:
             self.task_queue.put(('error', f"A multiprocessing error occurred: {e}"))
             self.task_queue.put(('done', None))
-
-    def _preview_binding_tab_command(self):
-        try:
-            config = self._gather_config()
-            compound_avg_mass = 500.0
-
-            total_binding_pct = (config.total_binding_range[0] + config.total_binding_range[1]) / 2
-            dar2_pct_of_bound = (config.dar2_range[0] + config.dar2_range[1]) / 2
-
-            mz_range = np.arange(config.common.mz_range_start, config.common.mz_range_end + config.common.mz_step, config.common.mz_step)
-
-            base_native_spec = generate_protein_spectrum(config.protein_avg_mass, mz_range, config.common.mz_step, config.common.peak_sigma_mz, BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution)
-            base_dar1_spec = generate_protein_spectrum(config.protein_avg_mass + compound_avg_mass, mz_range, config.common.mz_step, config.common.peak_sigma_mz, BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution)
-            base_dar2_spec = generate_protein_spectrum(config.protein_avg_mass + 2 * compound_avg_mass, mz_range, config.common.mz_step, config.common.peak_sigma_mz, BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution)
-
-            final_spec_clean = generate_binding_spectrum(
-                config.protein_avg_mass, compound_avg_mass, mz_range, config.common.mz_step,
-                config.common.peak_sigma_mz, total_binding_pct, dar2_pct_of_bound,
-                BASE_INTENSITY_SCALAR, config.common.isotopic_enabled, config.common.resolution
-            )
-
-            apex_scan_index = (config.lc.num_scans - 1) // 2
-            final_spec_noisy = apply_lc_profile_and_noise(
-                mz_range, [final_spec_clean], config.lc.num_scans, config.lc.gaussian_std_dev,
-                config.lc.lc_tailing_factor, config.common.seed, config.common.noise_option, config.common.pink_noise_enabled
-            )[0][apex_scan_index]
-
-            plot_data = {"Combined Spectrum (with noise)": final_spec_noisy}
-            if np.any(base_native_spec): plot_data["Native Protein (ref)"] = base_native_spec * 0.5
-            if np.any(base_dar1_spec): plot_data["DAR-1 Adduct (ref)"] = base_dar1_spec * 0.5
-            if np.any(base_dar2_spec): plot_data["DAR-2 Adduct (ref)"] = base_dar2_spec * 0.5
-
-            title = f"Binding Preview (Target Avg Mass: ~{config.protein_avg_mass:.0f} Da, Res: {config.common.resolution/1000}k)"
-            show_plot(mz_range, plot_data, title=title)
-
-        except (ValueError, IndexError) as e:
-            messagebox.showerror("Preview Error", f"Invalid parameters for preview: {e}")
-        except Exception as e:
-            messagebox.showerror("Preview Error", f"An unexpected error occurred during preview: {e}")
 
     def on_task_done(self):
         self.binding_generate_button.config(state=NORMAL)

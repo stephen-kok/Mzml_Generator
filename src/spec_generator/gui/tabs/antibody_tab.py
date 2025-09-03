@@ -20,6 +20,7 @@ from ..shared_widgets import (create_common_parameters_frame,
                               create_lc_simulation_frame, PtmEditor)
 from ...config import AntibodySimConfig, Chain, Ptm
 
+
 class AntibodyTab(BaseTab):
     def create_widgets(self):
         self.chain_entries = []

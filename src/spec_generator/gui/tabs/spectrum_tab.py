@@ -86,13 +86,6 @@ class SpectrumTab(BaseTab):
     def _create_action_buttons_frame(self):
         button_frame = ttk.Frame(self.content_frame)
         button_frame.grid(row=3, column=0, pady=15)
-        self.spectrum_preview_button = ttk.Button(button_frame, text=C.PREVIEW_SPECTRUM_BUTTON_TEXT, command=self.preview_spectrum_command, style='Outline.TButton')
-        self.spectrum_preview_button.pack(side=LEFT, padx=5)
-        Tooltip(self.spectrum_preview_button, C.PREVIEW_SPECTRUM_TOOLTIP)
-
-        self.plot_button = ttk.Button(button_frame, text=C.GENERATE_PLOT_BUTTON_TEXT, command=self.generate_and_plot_command, style='Outline.TButton')
-        self.plot_button.pack(side=LEFT, padx=5)
-        Tooltip(self.plot_button, C.GENERATE_PLOT_TOOLTIP)
 
         self.spectrum_generate_button = ttk.Button(button_frame, text=C.GENERATE_MZML_BUTTON_TEXT, command=self.generate_spectrum_command, bootstyle=PRIMARY)
         self.spectrum_generate_button.pack(side=LEFT, padx=5)
@@ -177,47 +170,5 @@ class SpectrumTab(BaseTab):
             self.task_queue.put(('error', C.INVALID_INPUT_ERROR.format(e)))
             self.on_task_done()
 
-    def preview_spectrum_command(self):
-        self.spectrum_preview_button.config(state=DISABLED)
-        try:
-            config_dict = self._gather_config()
-            # Run the preview logic in a separate thread to avoid blocking the GUI
-            threading.Thread(target=self.logic.preview_spectrum, args=(config_dict, self.task_queue), daemon=True).start()
-        except ValueError as e:
-            self.task_queue.put(('error', C.INVALID_PREVIEW_INPUT_ERROR.format(e)))
-            self.on_preview_done()
-        except Exception as e:
-            self.task_queue.put(('error', C.UNEXPECTED_ERROR_MESSAGE.format(e)))
-            self.on_preview_done()
-
-    def generate_and_plot_command(self):
-        self.plot_button.config(state=DISABLED)
-        try:
-            config_dict = self._gather_config()
-            if config_dict.get("protein_list_file"):
-                messagebox.showwarning(C.PLOT_WARNING_TITLE, C.PLOT_WARNING_MESSAGE)
-                self.on_plot_done()
-                return
-            self.logic.start_plot_generation(config_dict, self.task_queue, self._handle_plot_result)
-        except ValueError as e:
-            self.task_queue.put(('error', C.INVALID_INPUT_ERROR.format(e)))
-            self.on_plot_done()
-
-    def _handle_plot_result(self, result):
-        if result and self.app_controller:
-            plot_viewer = self.app_controller.get_plot_viewer()
-            if plot_viewer:
-                plot_viewer.plot_data(result)
-                self.app_controller.switch_to_plot_viewer()
-        # If result is None, it means an error occurred during process setup
-        # The error message should have already been put on the queue by the logic class
-        self.on_plot_done()
-
     def on_task_done(self):
         self.spectrum_generate_button.config(state=NORMAL)
-
-    def on_preview_done(self):
-        self.spectrum_preview_button.config(state=NORMAL)
-
-    def on_plot_done(self):
-        self.plot_button.config(state=NORMAL)

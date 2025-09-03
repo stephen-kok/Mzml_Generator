@@ -4,7 +4,6 @@ from ttkbootstrap import Style, widgets as ttk
 from ttkbootstrap.constants import BOTH
 
 from .tabs.docs_tab import DocsTab
-from .tabs.plot_viewer_tab import PlotViewerTab
 from .tabs.spectrum_tab import SpectrumTab
 from .tabs.binding_tab import BindingTab
 from .tabs.antibody_tab import AntibodyTab
@@ -27,7 +26,6 @@ class CombinedSpectrumSequenceApp:
 
         # Create and add tabs in a specific order
         self.add_tab(DocsTab, "Overview & Docs")
-        self.add_tab(PlotViewerTab, "Plot Viewer")
         self.add_tab(SpectrumTab, "Spectrum Generator")
         self.add_tab(BindingTab, "Covalent Binding")
         self.add_tab(AntibodyTab, "Antibody Simulation")
@@ -44,13 +42,3 @@ class CombinedSpectrumSequenceApp:
 
         self.notebook.add(tab, text=text)
         self.tabs[text] = tab
-
-    def get_plot_viewer(self):
-        """Returns the instance of the PlotViewerTab."""
-        return self.tabs.get("Plot Viewer")
-
-    def switch_to_plot_viewer(self):
-        """Switches the active notebook tab to the Plot Viewer."""
-        plot_tab = self.get_plot_viewer()
-        if plot_tab:
-            self.notebook.select(plot_tab)
