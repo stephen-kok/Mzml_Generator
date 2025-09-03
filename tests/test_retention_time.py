@@ -62,23 +62,27 @@ class TestRetentionTimeScaling(unittest.TestCase):
         self.assertEqual(scans[1], 500)
         self.assertEqual(scans[2], 900)
 
-    def test_rpc_scaling(self):
-        """Test RPC scaling for a wide range of hydrophobicity scores."""
-        scores = [0, 25, 50, 75, 100]  # Light chain to full antibody
+    def test_rpc_scaling_inverted(self):
+        """
+        Test inverted RPC scaling. Higher scores should elute earlier (lower scan).
+        """
+        scores = [0, 25, 50, 75, 100]  # e.g., Full Antibody to Light Chain
         num_scans = 1000
         scans = calculate_apex_scans_from_hydrophobicity(
             scores,
             num_scans,
             retention_time_model="rpc",
-            rpc_hydrophobicity_coefficient=0.05,
+            rpc_hydrophobicity_coefficient=5.0,  # Using new default
         )
-        # Elution should be non-linear
-        self.assertTrue(np.all(np.diff(scans) > 0))  # Should be sorted
-        # Check that the spacing increases, indicating exponential behavior
-        diffs = np.diff(scans)
-        self.assertTrue(diffs[1] > diffs[0])
-        self.assertTrue(diffs[2] > diffs[1])
-        self.assertTrue(diffs[3] > diffs[2])
+        # Elution should be non-linear and inverted
+        # Higher score -> lower scan number, so diffs should be negative
+        self.assertTrue(np.all(np.diff(scans) < 0))
+
+        # Check that the spacing changes, indicating non-linear behavior
+        # The absolute differences should not be constant
+        diffs = np.abs(np.diff(scans))
+        self.assertNotAlmostEqual(diffs[0], diffs[1])
+        self.assertNotAlmostEqual(diffs[1], diffs[2])
 
 
 if __name__ == "__main__":

@@ -55,7 +55,7 @@ def calculate_apex_scans_from_hydrophobicity(
     scores: list[float],
     num_scans: int,
     retention_time_model: str = "linear",
-    rpc_hydrophobicity_coefficient: float = 0.05,
+    rpc_hydrophobicity_coefficient: float = 5.0,
 ) -> list[int]:
     """
     Calculates the apex scan for each species based on its hydrophobicity score.
@@ -65,7 +65,8 @@ def calculate_apex_scans_from_hydrophobicity(
         scores: A list of hydrophobicity scores.
         num_scans: The total number of scans in the LC run.
         retention_time_model: The model to use for scaling ('linear' or 'rpc').
-        rpc_hydrophobicity_coefficient: Coefficient for the RPC model.
+        rpc_hydrophobicity_coefficient: Coefficient for the RPC model. A larger
+                                       value creates more separation.
 
     Returns:
         A list of integer scan indices for the apex of elution.
@@ -83,21 +84,21 @@ def calculate_apex_scans_from_hydrophobicity(
     usable_scan_range = num_scans - 2 * scan_padding
 
     if retention_time_model == "rpc":
-        # Reversed-Phase Chromatography (RPC) model
-        # Transform scores to be non-negative
-        normalized_scores = scores_arr - min_score
-        # Apply exponential scaling
-        exp_scores = np.exp(normalized_scores * rpc_hydrophobicity_coefficient)
+        # RPC model: Normalize scores to [0, 1] for stable exponential scaling
+        scores_0_1 = (scores_arr - min_score) / (max_score - min_score)
+        exp_scores = np.exp(scores_0_1 * rpc_hydrophobicity_coefficient)
         min_exp_score, max_exp_score = np.min(exp_scores), np.max(exp_scores)
 
         if max_exp_score == min_exp_score:
-             scaled_scans = np.full_like(scores_arr, usable_scan_range / 2)
+            scaled_scans = np.full_like(scores_arr, usable_scan_range / 2)
         else:
+            # Inverted relationship: higher score -> lower scan (earlier elution)
+            # This is to counteract an observed inversion in the input scores.
             scaled_scans = (
-                (exp_scores - min_exp_score) / (max_exp_score - min_exp_score)
+                (max_exp_score - exp_scores) / (max_exp_score - min_exp_score)
             ) * usable_scan_range
-
     else:  # Linear model
+        # Standard linear scaling: higher score -> higher scan (later elution)
         scaled_scans = (
             (scores_arr - min_score) / (max_score - min_score) * usable_scan_range
         )
