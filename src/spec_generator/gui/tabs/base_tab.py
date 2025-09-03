@@ -110,10 +110,6 @@ class BaseTab(ttk.Frame):
                 elif msg_type == 'preview_done':
                     if hasattr(self, 'on_preview_done'):
                         self.on_preview_done()
-                elif msg_type == 'callback':
-                    callback_fn, result = msg_data
-                    if callback_fn:
-                        callback_fn(result)
 
         except queue.Empty:
             pass

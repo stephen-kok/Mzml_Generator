@@ -19,14 +19,9 @@ from ...core.spectrum import generate_protein_spectrum, generate_binding_spectru
 from ...core.lc import apply_lc_profile_and_noise
 from ...core.constants import BASE_INTENSITY_SCALAR
 from ...config import CovalentBindingConfig
-from ...logic.binding_logic import BindingTabLogic
 
 
 class BindingTab(BaseTab):
-    def __init__(self, master, style, app_controller=None):
-        super().__init__(master, style, app_controller=app_controller)
-        self.logic = BindingTabLogic()
-
     def create_widgets(self):
         # --- Target & Compound Frame ---
         in_frame = ttk.LabelFrame(self.content_frame, text="Target & Compound", padding=(15, 10))
@@ -91,10 +86,6 @@ class BindingTab(BaseTab):
         # --- Action Buttons ---
         button_frame = ttk.Frame(self.content_frame)
         button_frame.grid(row=4, column=0, pady=15)
-
-        self.plot_button = ttk.Button(button_frame, text="Generate & Plot", command=self.generate_and_plot_command, style='Outline.TButton')
-        self.plot_button.pack(side=LEFT, padx=5)
-        Tooltip(self.plot_button, "Generate a single spectrum using the average of the probability ranges and plot it in the Plot Viewer.")
 
         self.binding_generate_button = ttk.Button(button_frame, text="Generate Binding Spectra", command=self.generate_binding_spectra_command, bootstyle=PRIMARY)
         self.binding_generate_button.pack(side=LEFT, padx=5)
@@ -171,25 +162,5 @@ class BindingTab(BaseTab):
             self.task_queue.put(('error', f"A multiprocessing error occurred: {e}"))
             self.task_queue.put(('done', None))
 
-    def generate_and_plot_command(self):
-        self.plot_button.config(state=DISABLED)
-        try:
-            config = self._gather_config()
-            self.logic.start_plot_generation(config, self.task_queue, self._handle_plot_result)
-        except ValueError as e:
-            self.task_queue.put(('error', f"Invalid input: {e}"))
-            self.on_plot_done()
-
-    def _handle_plot_result(self, result):
-        if result and self.app_controller:
-            plot_viewer = self.app_controller.get_plot_viewer()
-            if plot_viewer:
-                plot_viewer.plot_data(result)
-                self.app_controller.switch_to_plot_viewer()
-        self.on_plot_done()
-
     def on_task_done(self):
         self.binding_generate_button.config(state=NORMAL)
-
-    def on_plot_done(self):
-        self.plot_button.config(state=NORMAL)
