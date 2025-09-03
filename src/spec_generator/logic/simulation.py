@@ -123,7 +123,10 @@ class SimulationRunner:
             and len(self.config.hydrophobicity_scores) == len(all_clean_spectra)
         ):
             apex_scans = calculate_apex_scans_from_hydrophobicity(
-                self.config.hydrophobicity_scores, lc.num_scans
+                scores=self.config.hydrophobicity_scores,
+                num_scans=lc.num_scans,
+                retention_time_model=lc.retention_time_model,
+                rpc_hydrophobicity_coefficient=lc.rpc_hydrophobicity_coefficient,
             )
 
         combined_chromatogram = apply_lc_profile_and_noise(

@@ -36,6 +36,8 @@ class LCParams:
     scan_interval: float
     gaussian_std_dev: float
     lc_tailing_factor: float
+    retention_time_model: str = "rpc"
+    rpc_hydrophobicity_coefficient: float = 0.05
 
 @dataclass
 class SpectrumGeneratorConfig:
