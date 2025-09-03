@@ -97,6 +97,9 @@ class PeptideMapTab(BaseTab):
         log_scroll.grid(row=1, column=1, sticky="ns")
         self.output_text['yscrollcommand'] = log_scroll.set
 
+    def _progress_callback(self, msg_type, msg_data):
+        self.task_queue.put((msg_type, msg_data))
+
     def _gather_config(self) -> PeptideMapSimConfig:
         common, _ = self._gather_common_params(self.peptide_map_params)
 
@@ -140,7 +143,7 @@ class PeptideMapTab(BaseTab):
             execute_peptide_map_simulation(
                 config=config,
                 final_filepath=filepath,
-                update_queue=self.task_queue
+                progress_callback=self._progress_callback
             )
         except (ValueError, Exception) as e:
             self.task_queue.put(('error', f"Simulation failed: {e}"))
@@ -157,12 +160,12 @@ class PeptideMapTab(BaseTab):
             result = execute_peptide_map_simulation(
                 config=config,
                 final_filepath="",
-                update_queue=self.task_queue,
+                progress_callback=self._progress_callback,
                 return_data_only=True
             )
             if result and isinstance(result, tuple):
                 mz_range, run_data = result
-                scans = run_data[0] # The writer wraps it in a list
+                scans = run_data # This is the list of scans
                 bpc = [max(scan) if scan.any() else 0 for scan in scans]
                 times = [i * config.lc.scan_interval / 60.0 for i in range(len(scans))]
                 show_plot(times, {"Base Peak Chromatogram": bpc}, "BPC Preview", xlabel="Time (min)", ylabel="Intensity")

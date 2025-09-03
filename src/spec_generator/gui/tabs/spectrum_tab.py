@@ -75,7 +75,7 @@ class SpectrumTab(BaseTab):
     def _create_common_parameters_frame(self):
         common_frame = ttk.Frame(self.content_frame)
         common_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=0)
-        self.spec_gen_params = create_common_parameters_frame(common_frame, "400.0", "2500.0", "Default Noise")
+        self.spec_gen_params = create_common_parameters_frame(common_frame, "400.0", "2500.0")
         self.spec_gen_params['output_directory_var'].set(os.path.join(os.getcwd(), "Mzml Mock Spectra"))
         self.spec_gen_params['filename_template_var'].set("{date}_protein_{protein_mass}_{scans}scans_{noise}.mzML")
 

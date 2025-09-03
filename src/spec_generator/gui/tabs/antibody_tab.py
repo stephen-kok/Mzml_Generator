@@ -78,7 +78,7 @@ class AntibodyTab(BaseTab):
 
         common_frame = ttk.Frame(gen_frame)
         common_frame.pack(fill="x", expand=True)
-        self.antibody_params = create_common_parameters_frame(common_frame, "400.0", "4000.0", "Default Noise")
+        self.antibody_params = create_common_parameters_frame(common_frame, "400.0", "4000.0")
         self.antibody_params['output_directory_var'].set(os.path.join(os.getcwd(), "Antibody Mock Spectra"))
         self.antibody_params['filename_template_var'].set("{date}_{time}_antibody_sim_{scans}scans_{noise}.mzML")
 
@@ -317,7 +317,7 @@ class AntibodyTab(BaseTab):
             success = execute_antibody_simulation(
                 config=config,
                 final_filepath=filepath,
-                update_queue=self.task_queue
+                progress_callback=self._progress_callback
             )
 
             if success:
@@ -328,6 +328,9 @@ class AntibodyTab(BaseTab):
         except (ValueError, Exception) as e:
             self.task_queue.put(('error', f"Simulation failed: {e}"))
             self.task_queue.put(('done', None))
+
+    def _progress_callback(self, msg_type, msg_data):
+        self.task_queue.put((msg_type, msg_data))
 
     def on_task_done(self):
         self.antibody_generate_button.config(state=NORMAL)

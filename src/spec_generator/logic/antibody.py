@@ -87,7 +87,7 @@ def calculate_assembly_properties(chains: list[dict], assemblies: list[dict]) ->
 def execute_antibody_simulation(
     config: AntibodySimConfig,
     final_filepath: str,
-    update_queue: queue.Queue | None,
+    progress_callback=None,
     return_data_only: bool = False
 ):
     """
@@ -109,13 +109,13 @@ def execute_antibody_simulation(
         if len(intensity_scalars) != len(assemblies_with_properties):
             raise ValueError("The number of intensity scalars does not match the number of generated assemblies.")
 
-        if update_queue:
+        if progress_callback:
             num_assemblies = len(assemblies_with_properties)
-            update_queue.put(('log', f"Generated {num_assemblies} unique species. Simulating combined spectrum...\n"))
+            progress_callback('log', f"Generated {num_assemblies} unique species. Simulating combined spectrum...\n")
             for assembly in assemblies_with_properties[:15]:
-                update_queue.put(('log', f"  - {assembly['name']} ({assembly['mass']:.2f} Da)\n"))
+                progress_callback('log', f"  - {assembly['name']} ({assembly['mass']:.2f} Da)\n")
             if num_assemblies > 15:
-                update_queue.put(('log', f"  ... and {num_assemblies - 15} more species.\n"))
+                progress_callback('log', f"  ... and {num_assemblies - 15} more species.\n")
 
         protein_masses = [a['mass'] for a in assemblies_with_properties]
         hydrophobicity_scores = [a['hydrophobicity'] for a in assemblies_with_properties]
@@ -133,15 +133,15 @@ def execute_antibody_simulation(
         result = execute_simulation_and_write_mzml(
             config=sim_config,
             final_filepath=final_filepath,
-            update_queue=update_queue,
+            progress_callback=progress_callback,
             return_data_only=return_data_only
         )
 
         return result
 
     except (ValueError, Exception) as e:
-        if update_queue:
-            update_queue.put(('error', f"Antibody simulation failed: {e}"))
+        if progress_callback:
+            progress_callback('error', f"Antibody simulation failed: {e}")
         print(f"Antibody simulation failed: {e}")
         return False
 
