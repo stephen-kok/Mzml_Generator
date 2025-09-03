@@ -47,7 +47,7 @@ class BindingTab(BaseTab):
         # --- Common Parameters ---
         common_frame = ttk.Frame(self.content_frame)
         common_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=0)
-        self.binding_params = create_common_parameters_frame(common_frame, "400.0", "2000.0", "Default Noise")
+        self.binding_params = create_common_parameters_frame(common_frame, "400.0", "2000.0")
         self.binding_params['output_directory_var'].set(os.path.join(os.getcwd(), "Intact Covalent Binding Mock Spectra"))
         self.binding_params['filename_template_var'].set("{date}_{compound_name}_on_{protein_mass}_{scans}scans_{noise}.mzML")
 

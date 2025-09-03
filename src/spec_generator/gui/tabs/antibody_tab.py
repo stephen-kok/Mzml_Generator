@@ -78,7 +78,7 @@ class AntibodyTab(BaseTab):
 
         common_frame = ttk.Frame(gen_frame)
         common_frame.pack(fill="x", expand=True)
-        self.antibody_params = create_common_parameters_frame(common_frame, "400.0", "4000.0", "Default Noise")
+        self.antibody_params = create_common_parameters_frame(common_frame, "400.0", "4000.0")
         self.antibody_params['output_directory_var'].set(os.path.join(os.getcwd(), "Antibody Mock Spectra"))
         self.antibody_params['filename_template_var'].set("{date}_{time}_antibody_sim_{scans}scans_{noise}.mzML")
 

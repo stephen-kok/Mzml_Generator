@@ -162,7 +162,7 @@ class PeptideMapTab(BaseTab):
             )
             if result and isinstance(result, tuple):
                 mz_range, run_data = result
-                scans = run_data[0] # The writer wraps it in a list
+                scans = run_data # This is the list of scans
                 bpc = [max(scan) if scan.any() else 0 for scan in scans]
                 times = [i * config.lc.scan_interval / 60.0 for i in range(len(scans))]
                 show_plot(times, {"Base Peak Chromatogram": bpc}, "BPC Preview", xlabel="Time (min)", ylabel="Intensity")

@@ -32,7 +32,7 @@ def _browse_directory_for_var(string_var: StringVar):
     if directory:
         string_var.set(directory)
 
-def create_common_parameters_frame(parent, mz_start, mz_end, noise="No Noise"):
+def create_common_parameters_frame(parent, mz_start, mz_end, default_noise="No Noise"):
     """
     Creates and returns a frame containing common simulation parameter widgets.
     """
@@ -83,7 +83,7 @@ def create_common_parameters_frame(parent, mz_start, mz_end, noise="No Noise"):
     out_frame.columnconfigure(1, weight=1)
 
     ttk.Label(out_frame, text="Noise Level:").grid(row=0, column=0, sticky=W, pady=2)
-    params['noise_option_var'] = StringVar(value=noise)
+    params['noise_option_var'] = StringVar(value=default_noise)
     params['noise_option_combobox'] = ttk.Combobox(out_frame, textvariable=params['noise_option_var'], values=["No Noise"] + list(noise_presets.keys()), state="readonly", width=15)
     params['noise_option_combobox'].grid(row=0, column=1, sticky=W, pady=2, padx=5)
     Tooltip(params['noise_option_combobox'], "Select a preset for the type and amount of noise to add to the spectrum.")
