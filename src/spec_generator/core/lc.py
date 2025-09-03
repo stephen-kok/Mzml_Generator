@@ -1,4 +1,6 @@
 import math
+import threading
+from typing import Optional
 import numpy as np
 from numpy.random import default_rng
 from scipy.special import erfc
@@ -75,6 +77,7 @@ def apply_lc_profile_and_noise(
     pink_noise_enabled: bool,
     apex_scans: list[int] | None = None,
     progress_callback=None,
+    stop_event: Optional[threading.Event] = None,
 ) -> list[np.ndarray]:
     """
     Applies an LC peak shape to a list of base spectra and combines them into
@@ -102,6 +105,9 @@ def apply_lc_profile_and_noise(
 
     # Generate and apply LC profile for each species, adding it to the final chromatogram
     for i, base_spectrum in enumerate(all_clean_spectra):
+        if stop_event and stop_event.is_set():
+            progress_callback('log', "LC profile generation cancelled.\n")
+            return []
         apex_scan_index = apex_scans[i]
         lc_scaling_factors = _get_lc_peak_shape(num_scans, apex_scan_index, gaussian_std_dev, lc_tailing_factor)
 
@@ -126,6 +132,9 @@ def apply_lc_profile_and_noise(
         noise_params = noise_presets.get(noise_option)
         if noise_params:
             for scan_idx in range(num_scans):
+                if stop_event and stop_event.is_set():
+                    progress_callback('log', "Noise application cancelled.\n")
+                    return []
                 final_chromatogram[scan_idx] = add_noise(
                     mz_values=mz_range,
                     intensities=final_chromatogram[scan_idx],

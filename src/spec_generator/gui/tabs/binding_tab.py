@@ -13,6 +13,7 @@ import multiprocessing
 from ...utils.ui_helpers import Tooltip, parse_float_entry, parse_range_entry, show_plot
 from ...utils.file_io import read_compound_list_file
 from ...workers.tasks import run_binding_task
+from ...workers.worker_init import init_worker
 from .base_tab import BaseTab
 from ..shared_widgets import create_common_parameters_frame, create_lc_simulation_frame
 from ...core.spectrum import generate_protein_spectrum, generate_binding_spectrum
@@ -22,6 +23,10 @@ from ...config import CovalentBindingConfig
 
 
 class BindingTab(BaseTab):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.stop_event = None
+
     def create_widgets(self):
         # --- Target & Compound Frame ---
         in_frame = ttk.LabelFrame(self.content_frame, text="Target & Compound", padding=(15, 10))
@@ -91,6 +96,10 @@ class BindingTab(BaseTab):
         self.binding_generate_button.pack(side=LEFT, padx=5)
         Tooltip(self.binding_generate_button, "Generate an .mzML file for each compound in the list,\nwith binding determined by the specified probabilities.")
 
+        self.binding_stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_generation, state=DISABLED)
+        self.binding_stop_button.pack(side=LEFT, padx=5)
+        Tooltip(self.binding_stop_button, "Stop the current generation process.")
+
         # --- Progress & Output ---
         self.progress_bar = ttk.Progressbar(self.content_frame, orient=HORIZONTAL, mode="determinate")
         self.progress_bar.grid(row=5, column=0, pady=5, sticky="ew", padx=10)
@@ -126,11 +135,19 @@ class BindingTab(BaseTab):
 
     def generate_binding_spectra_command(self):
         self.binding_generate_button.config(state=DISABLED)
+        self.binding_stop_button.config(state=NORMAL)
         self.progress_bar["value"] = 0
         self.task_queue.put(('clear_log', None))
-        threading.Thread(target=self._worker_generate_binding_spectra, daemon=True).start()
+        self.stop_event = multiprocessing.Event()
+        threading.Thread(target=self._worker_generate_binding_spectra, args=(self.stop_event,), daemon=True).start()
 
-    def _worker_generate_binding_spectra(self):
+    def stop_generation(self):
+        if self.stop_event:
+            self.task_queue.put(('log', "--- Stop signal sent ---\n"))
+            self.stop_event.set()
+        self.binding_stop_button.config(state=DISABLED)
+
+    def _worker_generate_binding_spectra(self, stop_event):
         try:
             config = self._gather_config()
             compounds = read_compound_list_file(config.compound_list_file)
@@ -139,28 +156,44 @@ class BindingTab(BaseTab):
             self.task_queue.put(('done', None))
             return
 
+        # Prepare jobs for the pool
         jobs = []
         for i, (name, mass) in enumerate(compounds):
             job_config = copy.deepcopy(config)
             job_config.common.seed = config.common.seed + i
-            jobs.append((name, mass, job_config))
+            # The last arg `False` is `return_data_only`
+            jobs.append((name, mass, job_config, False))
 
         self.task_queue.put(('log', f"Starting batch generation for {len(jobs)} compounds using {os.cpu_count()} processes...\n\n"))
-        self.progress_bar["maximum"] = len(jobs)
-        self.progress_bar["value"] = 0
+        self.task_queue.put(('progress_max', len(jobs)))
+        self.task_queue.put(('progress_set', 0))
 
         try:
-            with multiprocessing.Pool(processes=os.cpu_count()) as pool:
+            with multiprocessing.Pool(processes=os.cpu_count(), initializer=init_worker, initargs=(stop_event,)) as pool:
                 success_count = 0
-                for i, (success, message) in enumerate(pool.imap_unordered(run_binding_task, jobs)):
-                    self.task_queue.put(('log', message))
-                    if success:
-                        success_count += 1
+                results = pool.imap_unordered(run_binding_task, jobs)
+                for i, result in enumerate(results):
+                    if stop_event.is_set():
+                        self.task_queue.put(('log', "Batch generation cancelled.\n"))
+                        break
+                    if result:
+                        success, message = result
+                        self.task_queue.put(('log', message))
+                        if success:
+                            success_count += 1
                     self.task_queue.put(('progress_set', i + 1))
-            self.task_queue.put(('done', f"Batch complete. Generated {success_count} of {len(jobs)} binding mzML files."))
+
+            if not stop_event.is_set():
+                self.task_queue.put(('done', f"Batch complete. Generated {success_count} of {len(jobs)} binding mzML files."))
+            else:
+                self.task_queue.put(('done', "Batch generation stopped."))
         except Exception as e:
             self.task_queue.put(('error', f"A multiprocessing error occurred: {e}"))
+        finally:
+            # This ensures the main thread knows the task is done
             self.task_queue.put(('done', None))
 
     def on_task_done(self):
         self.binding_generate_button.config(state=NORMAL)
+        self.binding_stop_button.config(state=DISABLED)
+        self.stop_event = None

@@ -1,5 +1,7 @@
 import os
 import numpy as np
+import threading
+from typing import Optional
 
 from ..core.spectrum import generate_binding_spectrum
 from ..core.lc import apply_lc_profile_and_noise
@@ -16,12 +18,14 @@ def execute_binding_simulation(
     dar2_percentage_of_bound: float,
     filepath: str,
     return_data_only: bool = False,
+    stop_event: Optional[threading.Event] = None,
 ) -> tuple[bool, str] | tuple[np.ndarray, list[np.ndarray]]:
     """
     Executes the logic for a single covalent binding simulation and writes the file.
     Returns a tuple of (success_boolean, final_filepath_string).
     """
     try:
+        if stop_event and stop_event.is_set(): return False, ""
         common = config.common
         lc = config.lc
 
@@ -32,6 +36,7 @@ def execute_binding_simulation(
         )
 
         # 1. Generate the clean, combined spectrum (native, DAR-1, DAR-2)
+        if stop_event and stop_event.is_set(): return False, ""
         clean_spec = generate_binding_spectrum(
             protein_avg_mass=config.protein_avg_mass,
             compound_avg_mass=compound_mass,
@@ -46,6 +51,7 @@ def execute_binding_simulation(
         )
 
         # 2. Apply LC profile and noise
+        if stop_event and stop_event.is_set(): return False, ""
         final_spectra = apply_lc_profile_and_noise(
             mz_range=mz_range,
             all_clean_spectra=[clean_spec],
@@ -55,15 +61,18 @@ def execute_binding_simulation(
             seed=common.seed,
             noise_option=common.noise_option,
             pink_noise_enabled=common.pink_noise_enabled,
-            progress_callback=None
+            progress_callback=None,
+            stop_event=stop_event
         )
 
         # 3. Create mzML content
+        if stop_event and stop_event.is_set(): return False, ""
         mzml_content = create_mzml_content_et(
             mz_range=mz_range,
             run_data=[final_spectra], # Wrap in list for mzML writer
             scan_interval=lc.scan_interval,
-            progress_callback=None
+            progress_callback=None,
+            stop_event=stop_event
         )
         if not mzml_content:
             return False, ""

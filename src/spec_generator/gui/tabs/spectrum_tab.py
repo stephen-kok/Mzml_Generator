@@ -1,6 +1,7 @@
 import os
 import csv
 import threading
+import multiprocessing
 from tkinter import (HORIZONTAL, LEFT, NORMAL, DISABLED, NSEW, SUNKEN, WORD,
                      StringVar, messagebox, filedialog, Text)
 
@@ -19,6 +20,7 @@ class SpectrumTab(BaseTab):
     def __init__(self, notebook, style, app_controller=None):
         super().__init__(notebook, style, app_controller=app_controller)
         self.logic = SpectrumTabLogic()
+        self.stop_event = None
 
     def create_widgets(self):
         self._create_protein_input_frame()
@@ -91,6 +93,10 @@ class SpectrumTab(BaseTab):
         self.spectrum_generate_button.pack(side=LEFT, padx=5)
         Tooltip(self.spectrum_generate_button, C.GENERATE_MZML_TOOLTIP)
 
+        self.spectrum_stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_generation, state=DISABLED)
+        self.spectrum_stop_button.pack(side=LEFT, padx=5)
+        Tooltip(self.spectrum_stop_button, "Stop the current generation process.")
+
     def _create_progress_and_output_frame(self):
         self.progress_bar = ttk.Progressbar(self.content_frame, orient=HORIZONTAL, mode="determinate")
         self.progress_bar.grid(row=4, column=0, pady=5, sticky="ew", padx=10)
@@ -161,14 +167,24 @@ class SpectrumTab(BaseTab):
 
     def generate_spectrum_command(self):
         self.spectrum_generate_button.config(state=DISABLED)
+        self.spectrum_stop_button.config(state=NORMAL)
         self.progress_bar["value"] = 0
         self.task_queue.put(('clear_log', None))
+        self.stop_event = multiprocessing.Event()
         try:
             config_dict = self._gather_config()
-            self.logic.generate_spectrum(config_dict, self.task_queue)
+            self.logic.generate_spectrum(config_dict, self.task_queue, self.stop_event)
         except ValueError as e:
             self.task_queue.put(('error', C.INVALID_INPUT_ERROR.format(e)))
             self.on_task_done()
 
+    def stop_generation(self):
+        if self.stop_event:
+            self.task_queue.put(('log', "--- Stop signal sent ---\n"))
+            self.stop_event.set()
+        self.spectrum_stop_button.config(state=DISABLED)
+
     def on_task_done(self):
         self.spectrum_generate_button.config(state=NORMAL)
+        self.spectrum_stop_button.config(state=DISABLED)
+        self.stop_event = None

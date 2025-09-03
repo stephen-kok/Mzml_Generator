@@ -1,6 +1,7 @@
 import base64
 import copy
 import hashlib
+import threading
 import xml.etree.ElementTree as ET
 import zlib
 from typing import List, Optional
@@ -24,6 +25,7 @@ def create_mzml_content_et(
     scan_interval: float,
     progress_callback=None,
     msms_spectra: Optional[List[MSMSSpectrum]] = None,
+    stop_event: Optional[threading.Event] = None,
 ) -> bytes | None:
     """
     Creates the full mzML file content as a byte string using xml.etree.ElementTree.
@@ -114,6 +116,9 @@ def create_mzml_content_et(
         spectrum_index, native_id_counter = 0, 1
         for protein_spectra in run_data:
             for scan_idx, intensity_array in enumerate(protein_spectra):
+                if stop_event and stop_event.is_set():
+                    progress_callback('log', "mzML generation cancelled.\n")
+                    return None
                 spec = copy.deepcopy(spec_template)
                 spec.set("index", str(spectrum_index))
                 spec.set("id", f"scan={native_id_counter}")
@@ -186,6 +191,9 @@ def create_mzml_content_et(
 
             for msms_scan in msms_spectra:
                 for event in msms_scan.fragmentation_events:
+                    if stop_event and stop_event.is_set():
+                        progress_callback('log', "mzML generation cancelled.\n")
+                        return None
                     spec = copy.deepcopy(ms2_spec_template)
                     spec.set("index", str(spectrum_index))
                     spec.set("id", f"scan={native_id_counter}")

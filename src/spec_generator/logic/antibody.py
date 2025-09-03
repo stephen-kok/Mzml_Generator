@@ -8,6 +8,8 @@ from pyteomics import mass
 from pyteomics.mass import Composition
 import math
 import queue
+import threading
+from typing import Optional
 from dataclasses import asdict
 
 from ..core.constants import DISULFIDE_MASS_LOSS
@@ -88,21 +90,25 @@ def execute_antibody_simulation(
     config: AntibodySimConfig,
     final_filepath: str,
     progress_callback=None,
-    return_data_only: bool = False
+    return_data_only: bool = False,
+    stop_event: Optional[threading.Event] = None,
 ):
     """
     Orchestrates the full antibody simulation process by generating assemblies,
     calculating their properties, and feeding them into the core simulation engine.
     """
     try:
+        if stop_event and stop_event.is_set(): return False
         chains_as_dicts = [asdict(c) for c in config.chains]
 
         assemblies = generate_assembly_combinations(chains_as_dicts)
         if not assemblies:
             raise ValueError("No valid antibody assemblies could be generated. Check chain definitions.")
 
+        if stop_event and stop_event.is_set(): return False
         assemblies_with_properties = calculate_assembly_properties(chains_as_dicts, assemblies)
 
+        if stop_event and stop_event.is_set(): return False
         ordered_assembly_names = [a['name'] for a in assemblies_with_properties]
         intensity_scalars = [config.assembly_abundances[name] for name in ordered_assembly_names]
 
@@ -134,7 +140,8 @@ def execute_antibody_simulation(
             config=sim_config,
             final_filepath=final_filepath,
             progress_callback=progress_callback,
-            return_data_only=return_data_only
+            return_data_only=return_data_only,
+            stop_event=stop_event,
         )
 
         return result

@@ -15,6 +15,10 @@ from ..shared_widgets import create_common_parameters_frame
 from ...config import PeptideMapSimConfig, PeptideMapLCParams
 
 class PeptideMapTab(BaseTab):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.stop_event = None
+
     def create_widgets(self):
         # --- Input Frame ---
         input_frame = ttk.LabelFrame(self.content_frame, text="1. Input Sequence & Digestion", padding=(15, 10))
@@ -83,6 +87,10 @@ class PeptideMapTab(BaseTab):
         self.generate_button = ttk.Button(action_frame, text="Generate mzML File", command=self._generate_command, bootstyle=PRIMARY)
         self.generate_button.pack(side=LEFT, padx=5)
 
+        self.stop_button = ttk.Button(action_frame, text="Stop", command=self.stop_generation, state=DISABLED)
+        self.stop_button.pack(side=LEFT, padx=5)
+        Tooltip(self.stop_button, "Stop the current generation process.")
+
         # --- Progress & Log ---
         progress_frame = ttk.LabelFrame(self.content_frame, text="3. Progress & Log", padding=(15, 10))
         progress_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=10)
@@ -123,11 +131,19 @@ class PeptideMapTab(BaseTab):
 
     def _generate_command(self):
         self.generate_button.config(state=DISABLED)
+        self.stop_button.config(state=NORMAL)
         self.progress_bar["value"] = 0
         self.task_queue.put(('clear_log', None))
-        threading.Thread(target=self._worker_generate, daemon=True).start()
+        self.stop_event = threading.Event()
+        threading.Thread(target=self._worker_generate, args=(self.stop_event,), daemon=True).start()
 
-    def _worker_generate(self):
+    def stop_generation(self):
+        if self.stop_event:
+            self.task_queue.put(('log', "--- Stop signal sent ---\n"))
+            self.stop_event.set()
+        self.stop_button.config(state=DISABLED)
+
+    def _worker_generate(self, stop_event):
         try:
             config = self._gather_config()
             placeholders = {
@@ -143,27 +159,36 @@ class PeptideMapTab(BaseTab):
             execute_peptide_map_simulation(
                 config=config,
                 final_filepath=filepath,
-                progress_callback=self._progress_callback
+                progress_callback=self._progress_callback,
+                stop_event=stop_event
             )
         except (ValueError, Exception) as e:
             self.task_queue.put(('error', f"Simulation failed: {e}"))
         finally:
-            self.task_queue.put(('done', None))
+            if stop_event.is_set():
+                self.task_queue.put(('done', "Generation stopped."))
+            else:
+                self.task_queue.put(('done', None)) # Success message is sent from the worker
 
     def _preview_command(self):
         self.preview_button.config(state=DISABLED)
-        threading.Thread(target=self._worker_preview, daemon=True).start()
+        self.stop_button.config(state=NORMAL)
+        self.stop_event = threading.Event()
+        threading.Thread(target=self._worker_preview, args=(self.stop_event,), daemon=True).start()
 
-    def _worker_preview(self):
+    def _worker_preview(self, stop_event):
         try:
             config = self._gather_config()
             result = execute_peptide_map_simulation(
                 config=config,
                 final_filepath="",
                 progress_callback=self._progress_callback,
-                return_data_only=True
+                return_data_only=True,
+                stop_event=stop_event
             )
-            if result and isinstance(result, tuple):
+            if stop_event.is_set():
+                 self.task_queue.put(('log', "Preview cancelled.\n"))
+            elif result and isinstance(result, tuple):
                 mz_range, run_data = result
                 scans = run_data # This is the list of scans
                 bpc = [max(scan) if scan.any() else 0 for scan in scans]
@@ -178,6 +203,10 @@ class PeptideMapTab(BaseTab):
 
     def on_task_done(self):
         self.generate_button.config(state=NORMAL)
+        self.stop_button.config(state=DISABLED)
+        self.stop_event = None
 
     def on_preview_done(self):
         self.preview_button.config(state=NORMAL)
+        self.stop_button.config(state=DISABLED)
+        self.stop_event = None

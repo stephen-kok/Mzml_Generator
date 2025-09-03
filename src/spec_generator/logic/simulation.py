@@ -2,6 +2,8 @@ import os
 import queue
 import multiprocessing
 import itertools
+import threading
+from typing import Optional
 import numpy as np
 
 from ..core.lc import apply_lc_profile_and_noise
@@ -13,6 +15,7 @@ from ..config import SpectrumGeneratorConfig
 from .retention_time import calculate_apex_scans_from_hydrophobicity
 from .fragmentation import generate_fragmentation_events
 from ..core.types import FragmentationEvent
+from ..workers.worker_init import init_worker, _stop_event_worker
 from collections import defaultdict
 
 
@@ -21,18 +24,22 @@ class SimulationRunner:
     Encapsulates the logic for running a full simulation from a configuration object.
     """
 
-    def __init__(self, config: SpectrumGeneratorConfig, progress_callback=None):
+    def __init__(
+        self,
+        config: SpectrumGeneratorConfig,
+        progress_callback=None,
+        stop_event: Optional[threading.Event] = None,
+    ):
         """
         Initializes the SimulationRunner.
         Args:
             config: The configuration object for the simulation.
             progress_callback: An optional function to call with progress updates.
-                               It should accept (str, Any) where the first element
-                               is the type of update (e.g., 'log', 'progress_set')
-                               and the second is the value.
+            stop_event: An event to signal cancellation.
         """
         self.config = config
         self.progress_callback = progress_callback or (lambda *args: None)
+        self.stop_event = stop_event
 
     def _prepare_simulation_tasks(self, mz_range: np.ndarray) -> tuple[list, list[int]]:
         """Prepares the list of tasks for the multiprocessing pool."""
@@ -80,6 +87,7 @@ class SimulationRunner:
         """
         Executes the core simulation logic to generate spectra data.
         """
+        if self.stop_event and self.stop_event.is_set(): return None
         common = self.config.common
         lc = self.config.lc
 
@@ -92,6 +100,7 @@ class SimulationRunner:
         )
         self.progress_callback("log", log_msg)
         self.progress_callback("progress_set", 5)
+        if self.stop_event and self.stop_event.is_set(): return None
 
         mz_range = np.arange(
             common.mz_range_start, common.mz_range_end + common.mz_step, common.mz_step
@@ -103,8 +112,30 @@ class SimulationRunner:
             "log", f"Generating {len(tasks)} total spectra in parallel...\n"
         )
 
-        with multiprocessing.Pool() as pool:
-            results = pool.starmap(_spectrum_generation_worker, tasks)
+        results = []
+        try:
+            # Use initializer to pass the stop_event to worker processes
+            with multiprocessing.Pool(initializer=init_worker, initargs=(self.stop_event,)) as pool:
+                # Use map_async to allow checking the stop_event periodically
+                async_result = pool.starmap_async(_spectrum_generation_worker, tasks)
+                while not async_result.ready():
+                    if self.stop_event and self.stop_event.is_set():
+                        self.progress_callback("log", "Cancellation received, terminating workers...\n")
+                        pool.terminate()
+                        pool.join()
+                        return None
+                    async_result.wait(timeout=0.1) # Wait with a timeout
+                results = async_result.get()
+        except Exception as e:
+            self.progress_callback("error", f"A multiprocessing error occurred: {e}")
+            return None
+        if self.stop_event and self.stop_event.is_set(): return None
+
+        # Filter out None results from cancelled tasks
+        results = [r for r in results if r is not None]
+        if not results:
+             self.progress_callback("log", "Spectrum generation cancelled or failed.\n")
+             return None
 
         all_clean_spectra = self._aggregate_simulation_results(results, num_sub_tasks)
 
@@ -115,6 +146,7 @@ class SimulationRunner:
             return None
 
         self.progress_callback("progress_set", 55)
+        if self.stop_event and self.stop_event.is_set(): return None
 
         apex_scans = None
         if (
@@ -128,6 +160,7 @@ class SimulationRunner:
                 retention_time_model=lc.retention_time_model,
                 rpc_hydrophobicity_coefficient=lc.rpc_hydrophobicity_coefficient,
             )
+        if self.stop_event and self.stop_event.is_set(): return None
 
         combined_chromatogram = apply_lc_profile_and_noise(
             mz_range=mz_range,
@@ -140,6 +173,7 @@ class SimulationRunner:
             pink_noise_enabled=common.pink_noise_enabled,
             apex_scans=apex_scans,
             progress_callback=self.progress_callback,
+            stop_event=self.stop_event,
         )
         return mz_range, [combined_chromatogram]
 
@@ -150,11 +184,15 @@ def _spectrum_generation_worker(
     intensity_scalar: float,
     config: SpectrumGeneratorConfig,
     mz_range: np.ndarray,
-) -> tuple[int, np.ndarray]:
+) -> tuple[int, np.ndarray] | None:
     """
     A simple worker that calls the main spectrum generation function and returns
     the result along with the index of the protein it belongs to.
+    Checks the global _stop_event_worker and returns None if it's set.
     """
+    if _stop_event_worker and _stop_event_worker.is_set():
+        return None
+
     common = config.common
     spectrum = generate_protein_spectrum(
         protein_mass,
@@ -173,6 +211,7 @@ def execute_simulation_and_write_mzml(
     final_filepath: str,
     progress_callback=None,
     return_data_only: bool = False,
+    stop_event: Optional[threading.Event] = None,
 ) -> bool | tuple[np.ndarray, list[np.ndarray]]:
     """
     The main logic for running a simulation and writing the mzML file.
@@ -189,16 +228,19 @@ def execute_simulation_and_write_mzml(
         return False
 
     try:
-        runner = SimulationRunner(config, progress_callback)
+        runner = SimulationRunner(config, progress_callback, stop_event)
         simulation_result = runner.run()
 
         if simulation_result is None:
+            # runner.run() returning None implies cancellation or an error that's already logged
             return False
 
         mz_range, spectra_for_mzml = simulation_result
 
         if return_data_only:
             return mz_range, spectra_for_mzml
+
+        if stop_event and stop_event.is_set(): return False
 
         if not os.path.basename(final_filepath):
             progress_callback('error', "Filename template resulted in an empty name.")
@@ -207,10 +249,12 @@ def execute_simulation_and_write_mzml(
         # --- MS/MS Data Generation ---
         msms_spectra = []
         if config.common.msms_enabled and config.peptide_sequences:
-            self.progress_callback("log", "Generating MS/MS spectra...\n")
+            progress_callback("log", "Generating MS/MS spectra...\n")
             for seq in config.peptide_sequences:
+                if stop_event and stop_event.is_set(): return False
                 # Loop through configured precursor charges
                 for precursor_charge in config.common.msms_precursor_charges:
+                    if stop_event and stop_event.is_set(): return False
                     events = generate_fragmentation_events(
                         sequence=seq,
                         precursor_charge=precursor_charge,
@@ -229,6 +273,7 @@ def execute_simulation_and_write_mzml(
                                 fragmentation_events=events,
                             )
                         )
+        if stop_event and stop_event.is_set(): return False
 
         mzml_content = create_mzml_content_et(
             mz_range,
@@ -236,8 +281,10 @@ def execute_simulation_and_write_mzml(
             config.lc.scan_interval if config.lc.enabled else 0.0,
             progress_callback,
             msms_spectra=msms_spectra,
+            stop_event=stop_event,
         )
         if mzml_content is None:
+            # This can happen on error or cancellation inside the writer
             return False
 
         progress_callback('progress_set', 95)

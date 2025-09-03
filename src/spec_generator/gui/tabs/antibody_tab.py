@@ -22,6 +22,10 @@ from ...config import AntibodySimConfig, Chain, Ptm
 
 
 class AntibodyTab(BaseTab):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.stop_event = None
+
     def create_widgets(self):
         self.chain_entries = []
         self.assembly_abundances = {}
@@ -90,6 +94,10 @@ class AntibodyTab(BaseTab):
 
         self.antibody_generate_button = ttk.Button(action_frame, text="Generate mzML File", command=self.generate_antibody_spectra_command, bootstyle=PRIMARY)
         self.antibody_generate_button.pack(side=LEFT, padx=5)
+
+        self.antibody_stop_button = ttk.Button(action_frame, text="Stop", command=self.stop_generation, state=DISABLED)
+        self.antibody_stop_button.pack(side=LEFT, padx=5)
+        Tooltip(self.antibody_stop_button, "Stop the current generation process.")
 
         # --- Progress & Log ---
         progress_frame = ttk.LabelFrame(self.content_frame, text="4. Progress & Log", padding=(15, 10))
@@ -275,9 +283,17 @@ class AntibodyTab(BaseTab):
 
     def generate_antibody_spectra_command(self):
         self.antibody_generate_button.config(state=DISABLED)
+        self.antibody_stop_button.config(state=NORMAL)
         self.progress_bar["value"] = 0
         self.task_queue.put(('clear_log', None))
-        threading.Thread(target=self._worker_generate_antibody_spectra, daemon=True).start()
+        self.stop_event = threading.Event()
+        threading.Thread(target=self._worker_generate_antibody_spectra, args=(self.stop_event,), daemon=True).start()
+
+    def stop_generation(self):
+        if self.stop_event:
+            self.task_queue.put(('log', "--- Stop signal sent ---\n"))
+            self.stop_event.set()
+        self.antibody_stop_button.config(state=DISABLED)
 
     def _on_treeview_double_click(self, event):
         region = self.assemblies_tree.identify_region(event.x, event.y)
@@ -300,7 +316,7 @@ class AntibodyTab(BaseTab):
         entry.bind("<Return>", save_edit)
         entry.bind("<FocusOut>", save_edit)
 
-    def _worker_generate_antibody_spectra(self):
+    def _worker_generate_antibody_spectra(self, stop_event):
         try:
             config = self._gather_config()
 
@@ -317,10 +333,13 @@ class AntibodyTab(BaseTab):
             success = execute_antibody_simulation(
                 config=config,
                 final_filepath=filepath,
-                progress_callback=self._progress_callback
+                progress_callback=self._progress_callback,
+                stop_event=stop_event,
             )
 
-            if success:
+            if stop_event.is_set():
+                self.task_queue.put(('done', "Generation stopped."))
+            elif success:
                 self.task_queue.put(('done', "Antibody mzML file successfully created."))
             else:
                 self.task_queue.put(('done', None))
@@ -334,3 +353,5 @@ class AntibodyTab(BaseTab):
 
     def on_task_done(self):
         self.antibody_generate_button.config(state=NORMAL)
+        self.antibody_stop_button.config(state=DISABLED)
+        self.stop_event = None

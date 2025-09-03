@@ -10,6 +10,7 @@ from ..config import SpectrumGeneratorConfig
 from ..utils.file_io import read_protein_list_file, format_filename
 from ..logic.simulation import execute_simulation_and_write_mzml
 from ..workers.tasks import run_simulation_task
+from ..workers.worker_init import init_worker
 from ..core.spectrum import generate_protein_spectrum
 from ..core.lc import apply_lc_profile_and_noise
 from ..core.constants import BASE_INTENSITY_SCALAR
@@ -61,17 +62,17 @@ class SpectrumTabLogic:
             writer.writerow(['Protein', 'Intensity'])
             writer.writerows(zip(masses, scalars))
 
-    def generate_spectrum(self, config_dict: dict, task_queue):
+    def generate_spectrum(self, config_dict: dict, task_queue, stop_event):
         try:
             config = self.validate_and_prepare_config(config_dict, task_queue)
             use_file_input = config.protein_list_file
             worker = self._worker_generate_from_protein_file if use_file_input else self._worker_generate_from_manual_input
-            threading.Thread(target=worker, args=(config, task_queue), daemon=True).start()
+            threading.Thread(target=worker, args=(config, task_queue, stop_event), daemon=True).start()
         except ValueError as e:
             task_queue.put(('error', str(e)))
             task_queue.put(('done', None))
 
-    def _worker_generate_from_protein_file(self, config: SpectrumGeneratorConfig, task_queue):
+    def _worker_generate_from_protein_file(self, config: SpectrumGeneratorConfig, task_queue, stop_event):
         try:
             protein_list = read_protein_list_file(config.protein_list_file)
         except (ValueError, FileNotFoundError) as e:
@@ -92,19 +93,30 @@ class SpectrumTabLogic:
         task_queue.put(('progress_set', 0))
 
         try:
-            with multiprocessing.Pool(processes=os.cpu_count()) as pool:
+            with multiprocessing.Pool(processes=os.cpu_count(), initializer=init_worker, initargs=(stop_event,)) as pool:
                 success_count = 0
-                for i, (success, message) in enumerate(pool.imap_unordered(run_simulation_task, jobs)):
-                    task_queue.put(('log', message))
-                    if success:
-                        success_count += 1
+                results = pool.imap_unordered(run_simulation_task, jobs)
+                for i, result in enumerate(results):
+                    if stop_event.is_set():
+                        task_queue.put(('log', "Batch generation cancelled.\n"))
+                        break
+                    if result:
+                        success, message = result
+                        task_queue.put(('log', message))
+                        if success:
+                            success_count += 1
                     task_queue.put(('progress_set', i + 1))
-            task_queue.put(('done', f"Batch complete. Generated {success_count} of {len(jobs)} mzML files."))
+
+            if not stop_event.is_set():
+                task_queue.put(('done', f"Batch complete. Generated {success_count} of {len(jobs)} mzML files."))
+            else:
+                task_queue.put(('done', "Batch generation stopped."))
+
         except Exception as e:
             task_queue.put(('error', f"A multiprocessing error occurred: {e}"))
             task_queue.put(('done', None))
 
-    def _worker_generate_from_manual_input(self, config: SpectrumGeneratorConfig, task_queue):
+    def _worker_generate_from_manual_input(self, config: SpectrumGeneratorConfig, task_queue, stop_event):
         try:
             if not config.protein_masses:
                 raise ValueError("No protein masses entered.")
@@ -125,11 +137,17 @@ class SpectrumTabLogic:
 
         # The lambda function acts as a bridge between the callback system and the GUI queue
         success = execute_simulation_and_write_mzml(
-            config, filepath, progress_callback=lambda type, value: task_queue.put((type, value))
+            config,
+            filepath,
+            progress_callback=lambda type, value: task_queue.put((type, value)),
+            stop_event=stop_event
         )
 
-        if success:
+        if stop_event.is_set():
+             task_queue.put(('done', "Generation stopped."))
+        elif success:
             task_queue.put(('done', "mzML file successfully created."))
         else:
+            # Error messages are sent from the simulation itself via the callback
             task_queue.put(('done', None))
 
