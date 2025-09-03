@@ -317,7 +317,7 @@ class AntibodyTab(BaseTab):
             success = execute_antibody_simulation(
                 config=config,
                 final_filepath=filepath,
-                update_queue=self.task_queue
+                progress_callback=self._progress_callback
             )
 
             if success:
@@ -328,6 +328,9 @@ class AntibodyTab(BaseTab):
         except (ValueError, Exception) as e:
             self.task_queue.put(('error', f"Simulation failed: {e}"))
             self.task_queue.put(('done', None))
+
+    def _progress_callback(self, msg_type, msg_data):
+        self.task_queue.put((msg_type, msg_data))
 
     def on_task_done(self):
         self.antibody_generate_button.config(state=NORMAL)
