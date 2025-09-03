@@ -52,36 +52,55 @@ def predict_retention_times(peptides: list[str], total_run_time_minutes: float =
 
 
 def calculate_apex_scans_from_hydrophobicity(
-    scores: list[float], num_scans: int
+    scores: list[float],
+    num_scans: int,
+    retention_time_model: str = "linear",
+    rpc_hydrophobicity_coefficient: float = 5.0,
 ) -> list[int]:
     """
-    Calculates the apex scan for each species based on its hydrophobicity score,
-    scaling the scores to fit within the available number of scans.
+    Calculates the apex scan for each species based on its hydrophobicity score.
+    Supports different models for scaling retention time.
 
     Args:
         scores: A list of hydrophobicity scores.
         num_scans: The total number of scans in the LC run.
+        retention_time_model: The model to use for scaling ('linear' or 'rpc').
+        rpc_hydrophobicity_coefficient: Coefficient for the RPC model. A larger
+                                       value creates more separation.
 
     Returns:
-        A list of integer scan indices corresponding to the apex of elution for each score.
+        A list of integer scan indices for the apex of elution.
     """
     if not scores:
         return []
 
-    scores_arr = np.array(scores)
+    scores_arr = np.array(scores, dtype=float)
     min_score, max_score = np.min(scores_arr), np.max(scores_arr)
 
     if max_score == min_score:
-        # All species elute in the middle
         return [int(num_scans / 2)] * len(scores)
-    else:
-        # Pad the elution time to avoid peaks at the very start/end of the chromatogram
-        scan_padding = int(num_scans * 0.1)
-        usable_scan_range = num_scans - 2 * scan_padding
 
-        # Scale scores to the usable scan range
+    scan_padding = int(num_scans * 0.1)
+    usable_scan_range = num_scans - 2 * scan_padding
+
+    if retention_time_model == "rpc":
+        # RPC model: Normalize scores to [0, 1] for stable exponential scaling
+        scores_0_1 = (scores_arr - min_score) / (max_score - min_score)
+        exp_scores = np.exp(scores_0_1 * rpc_hydrophobicity_coefficient)
+        min_exp_score, max_exp_score = np.min(exp_scores), np.max(exp_scores)
+
+        if max_exp_score == min_exp_score:
+            scaled_scans = np.full_like(scores_arr, usable_scan_range / 2)
+        else:
+            # Inverted relationship: higher score -> lower scan (earlier elution)
+            # This is to counteract an observed inversion in the input scores.
+            scaled_scans = (
+                (max_exp_score - exp_scores) / (max_exp_score - min_exp_score)
+            ) * usable_scan_range
+    else:  # Linear model
+        # Standard linear scaling: higher score -> higher scan (later elution)
         scaled_scans = (
             (scores_arr - min_score) / (max_score - min_score) * usable_scan_range
         )
-        # Offset by the padding to place them in the middle of the run
-        return [int(s + scan_padding) for s in scaled_scans]
+
+    return [int(s + scan_padding) for s in scaled_scans]

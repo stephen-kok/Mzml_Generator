@@ -138,8 +138,7 @@ def apply_lc_profile_and_noise(
         else:
             progress_callback('log', f"Warning: Noise preset '{noise_option}' not found. Skipping noise.\n")
 
-    # Add baseline offset and ensure non-negative intensities
-    baseline_offset = 10.0
-    final_noisy_chromatogram = [np.maximum(0, scan + baseline_offset) for scan in final_chromatogram]
+    # Ensure non-negative intensities
+    final_noisy_chromatogram = [np.maximum(0, scan) for scan in final_chromatogram]
 
     return final_noisy_chromatogram
